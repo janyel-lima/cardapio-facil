@@ -1,0 +1,1177 @@
+<!DOCTYPE html>
+<html lang="pt-br" x-data="menuApp()" :class="{ 'dark': darkMode }" x-init="init()">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title x-text="config.restaurantName + ' • Cardápio Digital'">Cardápio Digital Pro</title>
+    <meta name="theme-color" content="#ef4444">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-surface font-body transition-colors duration-300" x-cloak>
+
+    <!-- ════════════════════════════════════════════
+         TOAST NOTIFICATION
+    ═══════════════════════════════════════════════ -->
+    <div x-show="toast.visible"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 translate-y-4"
+         x-transition:enter-end="opacity-100 translate-y-0"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100 translate-y-0"
+         x-transition:leave-end="opacity-0 translate-y-4"
+         class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl text-white font-medium text-sm"
+         :class="toast.type === 'success' ? 'bg-green-500' : toast.type === 'error' ? 'bg-red-500' : 'bg-gray-800'"
+         style="min-width:220px">
+        <span x-text="toast.icon" class="text-lg"></span>
+        <span x-text="toast.message"></span>
+    </div>
+
+    <!-- ════════════════════════════════════════════
+         HEADER
+    ═══════════════════════════════════════════════ -->
+    <header class="sticky top-0 z-40 bg-surface-card border-b border-border backdrop-blur-sm">
+        <div class="max-w-2xl mx-auto px-4 py-3 flex justify-between items-center gap-4">
+            <div class="flex items-center gap-3">
+                <!-- Logo placeholder -->
+                <div class="w-10 h-10 rounded-xl flex items-center justify-center text-white font-display font-bold text-lg flex-shrink-0"
+                     :style="`background: var(--accent)`" x-text="config.restaurantName.charAt(0)"></div>
+                <div>
+                    <h1 class="text-base font-display font-bold text-text-primary leading-tight" x-text="config.restaurantName"></h1>
+                    <p class="text-xs flex items-center gap-1.5 font-body"
+                       :class="config.isOpen ? 'text-green-500' : 'text-red-400'">
+                        <span class="w-1.5 h-1.5 rounded-full inline-block"
+                              :class="config.isOpen ? 'bg-green-500 animate-pulse' : 'bg-red-400'"></span>
+                        <span x-text="config.isOpen ? 'Aberto agora' : 'Fechado'"></span>
+                        <span class="text-text-muted">•</span>
+                        <span class="text-text-muted" x-text="config.city"></span>
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <!-- Search toggle -->
+                <button @click="showSearch = !showSearch" class="icon-btn" title="Buscar">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/></svg>
+                </button>
+                <!-- Dark Mode -->
+                <button @click="darkMode = !darkMode; saveSetting('darkMode', darkMode)" class="icon-btn" title="Tema">
+                    <svg x-show="!darkMode" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 0 1 8.646 3.646 9.003 9.003 0 0 0 12 21a9.003 9.003 0 0 0 8.354-5.646z"/></svg>
+                    <svg x-show="darkMode" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364-.707-.707M6.343 6.343l-.707-.707m12.728 0-.707.707M6.343 17.657l-.707.707M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8z"/></svg>
+                </button>
+                <!-- Theme Picker -->
+                <button @click="showThemePicker = true" class="icon-btn" title="Cores">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 0 1-4-4V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v12a4 4 0 0 1-4 4zm0 0h12a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 0 1 2.828 0l2.829 2.829a2 2 0 0 1 0 2.828l-8.486 8.485M7 17h.01"/></svg>
+                </button>
+                <!-- Admin -->
+                <button @click="showAdminLogin = true" class="icon-btn" title="Administrador">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <!-- Cart -->
+                <button @click="showCart = true" class="relative cart-btn flex items-center gap-2 px-3 py-2 rounded-xl font-medium text-sm text-white transition-transform active:scale-95"
+                        :style="`background: var(--accent)`">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-8 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
+                    <span x-show="cartTotalItems > 0" x-text="cartTotalItems" class="font-display font-bold"></span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Search Bar -->
+        <div x-show="showSearch"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 -translate-y-2"
+             x-transition:enter-end="opacity-100 translate-y-0"
+             class="max-w-2xl mx-auto px-4 pb-3">
+            <div class="relative">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/></svg>
+                <input type="text" x-model="searchQuery" placeholder="Buscar no cardápio…"
+                       class="w-full pl-9 pr-4 py-2.5 bg-surface-muted rounded-xl text-sm text-text-primary placeholder-text-muted outline-none focus:ring-2 ring-accent transition-all">
+                <button x-show="searchQuery" @click="searchQuery=''" class="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary">✕</button>
+            </div>
+        </div>
+
+        <!-- Category Tabs -->
+        <div x-show="!showSearch || !searchQuery" class="flex gap-2 overflow-x-auto px-4 pb-3 hide-scrollbar">
+            <button @click="activeTab = null"
+                    :class="activeTab === null ? 'tab-active' : 'tab-inactive'"
+                    class="tab-btn">Todos</button>
+            <template x-for="cat in activeCategories" :key="cat.id">
+                <button @click="activeTab = cat.id"
+                        :class="activeTab === cat.id ? 'tab-active' : 'tab-inactive'"
+                        class="tab-btn">
+                    <span x-text="cat.icon" class="mr-1"></span>
+                    <span x-text="cat.name"></span>
+                </button>
+            </template>
+        </div>
+    </header>
+
+    <!-- ════════════════════════════════════════════
+         PROMO BANNER
+    ═══════════════════════════════════════════════ -->
+    <div x-show="activePromos.length > 0 && !searchQuery" class="max-w-2xl mx-auto px-4 pt-4">
+        <div class="promo-banner rounded-2xl p-4 flex items-center gap-3 relative overflow-hidden">
+            <div class="promo-bg-decoration"></div>
+            <div class="text-2xl flex-shrink-0">🔥</div>
+            <div class="flex-1 min-w-0">
+                <p class="text-xs font-semibold text-white/70 uppercase tracking-wider">Promoções Ativas</p>
+                <div class="flex gap-2 overflow-x-auto hide-scrollbar mt-1">
+                    <template x-for="promo in activePromos" :key="promo.id">
+                        <span class="inline-block bg-white/20 text-white text-xs font-medium px-2.5 py-1 rounded-lg whitespace-nowrap">
+                            <span x-text="promo.name"></span>
+                            <span class="ml-1 font-bold">
+                                <span x-show="promo.type === 'percentage'">-<span x-text="promo.value"></span>%</span>
+                                <span x-show="promo.type === 'fixed'">-<span x-text="formatMoney(promo.value)"></span></span>
+                                <span x-show="promo.type === 'freeDelivery'">Frete grátis!</span>
+                                <span x-show="promo.type === 'coupon'">Cupom: <span x-text="promo.code" class="uppercase"></span></span>
+                            </span>
+                        </span>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════
+         MAIN CONTENT
+    ═══════════════════════════════════════════════ -->
+    <main class="max-w-2xl mx-auto px-4 pb-28 pt-4">
+
+        <!-- Search Results Header -->
+        <div x-show="searchQuery" class="mb-4">
+            <p class="text-sm text-text-muted">
+                <span x-text="filteredItems.length"></span> resultado(s) para
+                "<span class="text-text-primary font-medium" x-text="searchQuery"></span>"
+            </p>
+        </div>
+
+        <!-- Empty state -->
+        <div x-show="filteredItems.length === 0" class="flex flex-col items-center justify-center py-20 text-center">
+            <div class="text-6xl mb-4">🍽️</div>
+            <h3 class="text-lg font-display font-bold text-text-primary mb-2">Nenhum item encontrado</h3>
+            <p class="text-sm text-text-muted">Tente outra categoria ou busca diferente.</p>
+        </div>
+
+        <!-- Items Grid -->
+        <div class="space-y-3">
+            <template x-for="item in filteredItems" :key="item.id">
+                <div class="product-card bg-surface-card rounded-2xl border border-border overflow-hidden flex items-stretch gap-0 transition-all duration-200 hover:shadow-md hover:border-accent/30 cursor-pointer"
+                     @click="openProductModal(item)">
+                    <!-- Promo badge -->
+                    <div x-show="item.promoPrice" class="absolute" style="display:none"></div>
+
+                    <div class="flex-1 p-4 flex flex-col justify-between min-w-0">
+                        <div>
+                            <div class="flex items-start gap-2 mb-1">
+                                <h3 class="font-display font-bold text-text-primary text-sm leading-tight flex-1" x-text="item.name"></h3>
+                                <div class="flex flex-col gap-1 items-end flex-shrink-0">
+                                    <span x-show="item.featured" class="badge-featured text-[10px] px-2 py-0.5 rounded-full font-bold">⭐ Destaque</span>
+                                    <span x-show="!item.available" class="bg-gray-200 dark:bg-gray-700 text-text-muted text-[10px] px-2 py-0.5 rounded-full font-medium">Indisponível</span>
+                                </div>
+                            </div>
+                            <p class="text-xs text-text-muted line-clamp-2 leading-relaxed" x-text="item.desc"></p>
+                        </div>
+                        <div class="mt-3 flex justify-between items-center">
+                            <div>
+                                <div x-show="item.promoPrice" class="flex items-baseline gap-2">
+                                    <span class="text-xs text-text-muted line-through" x-text="formatMoney(item.price)"></span>
+                                    <span class="font-display font-bold text-accent" x-text="formatMoney(item.promoPrice)"></span>
+                                </div>
+                                <span x-show="!item.promoPrice" class="font-display font-bold text-accent" x-text="formatMoney(item.price)"></span>
+                            </div>
+                            <button @click.stop="addToCart(item)"
+                                    :disabled="!item.available"
+                                    class="add-btn w-8 h-8 rounded-xl flex items-center justify-center text-white font-bold text-lg transition-all active:scale-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    :style="item.available ? 'background: var(--accent)' : ''">+</button>
+                        </div>
+                    </div>
+
+                    <div class="w-28 flex-shrink-0 relative">
+                        <img :src="item.image || 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=300'"
+                             :alt="item.name"
+                             class="w-full h-full object-cover"
+                             style="min-height:110px; max-height:130px">
+                        <div x-show="item.promoPrice" class="absolute top-2 left-2 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-lg">PROMO</div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </main>
+
+    <!-- ════════════════════════════════════════════
+         PRODUCT DETAIL MODAL
+    ═══════════════════════════════════════════════ -->
+    <div x-show="showProductModal && selectedProduct"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         class="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="showProductModal = false"></div>
+        <div x-show="showProductModal && selectedProduct"
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="translate-y-full sm:translate-y-0 sm:scale-95 opacity-0"
+             x-transition:enter-end="translate-y-0 sm:scale-100 opacity-100"
+             class="relative bg-surface-card w-full max-w-lg rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl max-h-[92vh] flex flex-col">
+            <template x-if="selectedProduct">
+                <div class="flex flex-col overflow-hidden">
+                    <div class="relative h-52 flex-shrink-0">
+                        <img :src="selectedProduct.image || 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=600'"
+                             :alt="selectedProduct.name" class="w-full h-full object-cover">
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+                        <button @click="showProductModal = false" class="absolute top-4 right-4 bg-black/40 text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-black/60 transition-colors">✕</button>
+                        <div x-show="selectedProduct.promoPrice" class="absolute top-4 left-4 bg-red-500 text-white text-xs font-bold px-2.5 py-1 rounded-xl">🔥 PROMOÇÃO</div>
+                        <div class="absolute bottom-4 left-4">
+                            <h2 class="text-xl font-display font-bold text-white" x-text="selectedProduct.name"></h2>
+                        </div>
+                    </div>
+                    <div class="p-5 overflow-y-auto flex-1">
+                        <p class="text-sm text-text-muted leading-relaxed mb-4" x-text="selectedProduct.desc"></p>
+                        <div class="flex items-center justify-between mb-6">
+                            <div>
+                                <div x-show="selectedProduct.promoPrice" class="flex items-baseline gap-2">
+                                    <span class="text-sm text-text-muted line-through" x-text="formatMoney(selectedProduct.price)"></span>
+                                    <span class="text-2xl font-display font-bold text-accent" x-text="formatMoney(selectedProduct.promoPrice)"></span>
+                                </div>
+                                <span x-show="!selectedProduct.promoPrice" class="text-2xl font-display font-bold text-accent" x-text="formatMoney(selectedProduct.price)"></span>
+                            </div>
+                            <!-- Qty selector -->
+                            <div class="flex items-center gap-3 bg-surface-muted rounded-xl p-1">
+                                <button @click="if(modalQty > 1) modalQty--" class="w-8 h-8 rounded-lg bg-surface-card flex items-center justify-center font-bold text-text-primary shadow-sm">−</button>
+                                <span x-text="modalQty" class="font-display font-bold text-text-primary w-6 text-center"></span>
+                                <button @click="modalQty++" class="w-8 h-8 rounded-xl flex items-center justify-center text-white font-bold shadow-sm" :style="'background:var(--accent)'">+</button>
+                            </div>
+                        </div>
+                        <!-- Notes -->
+                        <textarea x-model="modalNote" placeholder="Alguma observação? (ex: sem cebola, ponto da carne…)" rows="2"
+                                  class="w-full text-sm bg-surface-muted text-text-primary placeholder-text-muted rounded-xl p-3 outline-none focus:ring-2 ring-accent resize-none mb-4 transition-all"></textarea>
+                        <button @click="addToCartWithDetails(selectedProduct, modalQty, modalNote); showProductModal=false"
+                                :disabled="!selectedProduct.available"
+                                class="w-full py-3.5 rounded-2xl text-white font-display font-bold text-base shadow-lg transition-all active:scale-[0.98] disabled:opacity-50"
+                                :style="'background:var(--accent)'">
+                            <span x-show="selectedProduct.available">Adicionar ao Pedido • <span x-text="formatMoney((selectedProduct.promoPrice || selectedProduct.price) * modalQty)"></span></span>
+                            <span x-show="!selectedProduct.available">Item Indisponível</span>
+                        </button>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════
+         CART PANEL
+    ═══════════════════════════════════════════════ -->
+    <div x-show="showCart"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         class="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="showCart = false"></div>
+        <div x-show="showCart"
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="translate-y-full sm:translate-y-0 sm:scale-95 opacity-0"
+             x-transition:enter-end="translate-y-0 sm:scale-100 opacity-100"
+             class="relative bg-surface-card w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col max-h-[92vh]">
+
+            <!-- Cart Header -->
+            <div class="flex justify-between items-center p-5 border-b border-border flex-shrink-0">
+                <div>
+                    <h2 class="text-xl font-display font-bold text-text-primary">Seu Pedido</h2>
+                    <p class="text-xs text-text-muted mt-0.5" x-show="cart.length > 0">
+                        <span x-text="cartTotalItems"></span> item(s) • <span x-text="formatMoney(cartSubtotal)"></span>
+                    </p>
+                </div>
+                <button @click="showCart = false" class="icon-btn">✕</button>
+            </div>
+
+            <div class="overflow-y-auto flex-1 p-5 space-y-3">
+                <!-- Cart Items -->
+                <template x-for="(item, index) in cart" :key="index">
+                    <div class="flex items-center gap-3 bg-surface-muted rounded-2xl p-3">
+                        <img :src="item.image || 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=200'"
+                             class="w-14 h-14 rounded-xl object-cover flex-shrink-0">
+                        <div class="flex-1 min-w-0">
+                            <p class="font-display font-bold text-text-primary text-sm leading-tight" x-text="item.name"></p>
+                            <p x-show="item.note" class="text-xs text-text-muted italic mt-0.5 truncate" x-text="'📝 ' + item.note"></p>
+                            <p class="text-accent font-bold text-sm mt-1" x-text="formatMoney((item.promoPrice || item.price) * item.qty)"></p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button @click="decrementCart(index)" class="w-7 h-7 rounded-lg bg-surface-card border border-border flex items-center justify-center text-text-primary font-bold text-sm transition-colors hover:border-red-300 hover:text-red-500">−</button>
+                            <span x-text="item.qty" class="font-display font-bold text-text-primary w-5 text-center text-sm"></span>
+                            <button @click="incrementCart(index)" class="w-7 h-7 rounded-xl flex items-center justify-center text-white font-bold text-sm" :style="'background:var(--accent)'">+</button>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- Empty Cart -->
+                <div x-show="cart.length === 0" class="flex flex-col items-center justify-center py-12 text-center">
+                    <div class="text-5xl mb-3">🛒</div>
+                    <h3 class="font-display font-bold text-text-primary mb-1">Carrinho vazio</h3>
+                    <p class="text-sm text-text-muted">Adicione items do cardápio para começar seu pedido</p>
+                </div>
+
+                <!-- Checkout Form -->
+                <div x-show="cart.length > 0" class="space-y-3 pt-3">
+                    <div class="border-t border-dashed border-border pt-4">
+                        <h3 class="font-display font-bold text-text-primary mb-3 text-sm uppercase tracking-wider">Dados de Entrega</h3>
+                        <div class="space-y-2.5">
+                            <input type="text" x-model="checkout.name" placeholder="Seu nome completo *"
+                                   class="form-input w-full">
+                            <input type="tel" x-model="checkout.phone" placeholder="WhatsApp (11) 99999-9999 *"
+                                   class="form-input w-full">
+
+                            <!-- Delivery type selector -->
+                            <div class="grid grid-cols-2 gap-2">
+                                <button @click="checkout.deliveryType = 'delivery'"
+                                        :class="checkout.deliveryType === 'delivery' ? 'border-accent bg-accent/10 text-accent' : 'border-border text-text-muted'"
+                                        class="py-2.5 rounded-xl border-2 font-medium text-sm transition-all">🛵 Delivery</button>
+                                <button @click="checkout.deliveryType = 'pickup'"
+                                        :class="checkout.deliveryType === 'pickup' ? 'border-accent bg-accent/10 text-accent' : 'border-border text-text-muted'"
+                                        class="py-2.5 rounded-xl border-2 font-medium text-sm transition-all">🏃 Retirada</button>
+                            </div>
+
+                            <div x-show="checkout.deliveryType === 'delivery'">
+                                <input type="text" x-model="checkout.address" placeholder="Rua, número, bairro *"
+                                       class="form-input w-full mb-2">
+                                <input type="text" x-model="checkout.complement" placeholder="Complemento (apto, ref.)"
+                                       class="form-input w-full">
+                            </div>
+
+                            <!-- Payment Method -->
+                            <div>
+                                <p class="text-xs text-text-muted font-medium mb-2 uppercase tracking-wider">Forma de Pagamento</p>
+                                <div class="grid grid-cols-3 gap-2">
+                                    <template x-for="method in paymentMethods" :key="method.id">
+                                        <button @click="checkout.payment = method.id"
+                                                :class="checkout.payment === method.id ? 'border-accent bg-accent/10' : 'border-border'"
+                                                class="flex flex-col items-center gap-1 py-2.5 rounded-xl border-2 transition-all">
+                                            <span class="text-xl" x-text="method.icon"></span>
+                                            <span class="text-[11px] font-medium" :class="checkout.payment === method.id ? 'text-accent' : 'text-text-muted'" x-text="method.name"></span>
+                                        </button>
+                                    </template>
+                                </div>
+                            </div>
+
+                            <!-- Coupon -->
+                            <div class="flex gap-2">
+                                <input type="text" x-model="couponInput" placeholder="Cupom de desconto"
+                                       class="form-input flex-1 uppercase">
+                                <button @click="applyCoupon()" class="px-4 py-2.5 rounded-xl font-medium text-sm text-white transition-all" :style="'background:var(--accent)'">Aplicar</button>
+                            </div>
+                            <div x-show="appliedCoupon" class="flex items-center gap-2 bg-green-500/10 border border-green-500/20 rounded-xl p-3">
+                                <span class="text-green-500 font-bold text-sm">✓ Cupom "<span x-text="appliedCoupon?.code" class="uppercase"></span>" aplicado!</span>
+                                <button @click="appliedCoupon = null" class="ml-auto text-text-muted text-xs">Remover</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Order Summary -->
+                    <div class="bg-surface-muted rounded-2xl p-4 space-y-2 text-sm">
+                        <div class="flex justify-between text-text-muted">
+                            <span>Subtotal</span>
+                            <span x-text="formatMoney(cartSubtotal)"></span>
+                        </div>
+                        <div x-show="discountValue > 0" class="flex justify-between text-green-500">
+                            <span>Desconto</span>
+                            <span>-<span x-text="formatMoney(discountValue)"></span></span>
+                        </div>
+                        <div class="flex justify-between text-text-muted" x-show="checkout.deliveryType === 'delivery'">
+                            <span>Taxa de entrega</span>
+                            <span x-show="deliveryFee === 0" class="text-green-500 font-medium">Grátis 🎉</span>
+                            <span x-show="deliveryFee > 0" x-text="formatMoney(deliveryFee)"></span>
+                        </div>
+                        <div class="border-t border-border pt-2 flex justify-between font-display font-bold text-base text-text-primary">
+                            <span>Total</span>
+                            <span class="text-accent" x-text="formatMoney(orderTotal)"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Checkout Footer -->
+            <div x-show="cart.length > 0" class="p-5 border-t border-border flex-shrink-0">
+                <button @click="sendToWhatsApp()"
+                        class="w-full py-4 rounded-2xl text-white font-display font-bold text-base shadow-lg shadow-green-500/20 bg-green-500 hover:bg-green-600 flex items-center justify-center gap-2.5 transition-all active:scale-[0.98]">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z"/></svg>
+                    Enviar Pedido via WhatsApp
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════
+         PIX PAYMENT MODAL
+    ═══════════════════════════════════════════════ -->
+    <div x-show="showPixModal"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         class="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+        <div class="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+        <div x-show="showPixModal"
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="translate-y-full sm:scale-95 opacity-0"
+             x-transition:enter-end="translate-y-0 sm:scale-100 opacity-100"
+             class="relative bg-surface-card w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden">
+
+            <!-- Success state -->
+            <div x-show="pixStatus === 'confirmed'" class="p-10 text-center">
+                <div class="text-6xl mb-4 animate-bounce">✅</div>
+                <h3 class="font-display font-bold text-text-primary text-2xl mb-2">Pagamento Confirmado!</h3>
+                <p class="text-text-muted text-sm">Seu pedido está sendo preparado 🍔</p>
+            </div>
+
+            <!-- Expired state -->
+            <div x-show="pixStatus === 'expired'" class="p-8 text-center">
+                <div class="text-5xl mb-4">⏰</div>
+                <h3 class="font-display font-bold text-text-primary text-xl mb-2">QR Code Expirado</h3>
+                <p class="text-text-muted text-sm mb-4">O tempo limite de pagamento expirou.</p>
+                <button @click="openPixModal()" class="btn-primary">Gerar Novo QR Code</button>
+                <button @click="showPixModal=false; showCart=true" class="w-full mt-2 py-2 text-sm text-text-muted hover:text-text-primary">Voltar ao carrinho</button>
+            </div>
+
+            <!-- Pending state -->
+            <div x-show="pixStatus === 'pending'" class="p-6">
+                <!-- Header -->
+                <div class="flex items-center gap-3 mb-5">
+                    <div class="w-10 h-10 rounded-xl flex items-center justify-center text-white text-lg font-bold" :style="'background:var(--accent)'">🔑</div>
+                    <div>
+                        <h3 class="font-display font-bold text-text-primary text-lg leading-tight">Pague via PIX</h3>
+                        <p class="text-xs text-text-muted">Escaneie o QR Code ou copie a chave</p>
+                    </div>
+                    <div class="ml-auto text-right">
+                        <div class="font-display font-bold text-2xl text-accent" x-text="formatMoney(orderTotal)"></div>
+                        <div class="text-xs font-mono" :class="pixCountdown < 60 ? 'text-red-500' : 'text-text-muted'">
+                            Expira em <span x-text="pixCountdownFormatted"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Progress bar -->
+                <div class="w-full h-1.5 bg-surface-muted rounded-full mb-5 overflow-hidden">
+                    <div class="h-full rounded-full transition-all duration-1000"
+                         :style="`width:${(pixCountdown/300)*100}%; background:var(--accent)`"
+                         :class="pixCountdown < 60 ? '!bg-red-500' : ''"></div>
+                </div>
+
+                <!-- QR Code -->
+                <div class="flex flex-col items-center mb-5">
+                    <div class="bg-white p-3 rounded-2xl shadow-sm border border-border inline-block mb-3">
+                        <img :src="pixQrUrl" alt="QR Code PIX" class="w-44 h-44 rounded-xl" loading="lazy">
+                    </div>
+                    <p class="text-xs text-text-muted text-center">Aponte a câmera do celular para o código</p>
+                </div>
+
+                <!-- PIX Key -->
+                <div class="bg-surface-muted rounded-2xl p-4 mb-4">
+                    <p class="text-xs text-text-muted uppercase tracking-wider font-medium mb-2">Chave PIX</p>
+                    <div class="flex items-center gap-3">
+                        <span class="font-mono text-sm text-text-primary flex-1 break-all" x-text="config.pixKey"></span>
+                        <button @click="copyPixKey()"
+                                class="flex-shrink-0 px-3 py-2 rounded-xl font-medium text-sm transition-all"
+                                :class="pixCopied ? 'bg-green-500 text-white' : ''"
+                                :style="!pixCopied ? 'background:var(--accent);color:white' : ''">
+                            <span x-show="!pixCopied">📋 Copiar</span>
+                            <span x-show="pixCopied">✓ Copiado!</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Steps -->
+                <div class="space-y-2 mb-5">
+                    <div class="flex items-center gap-3 text-sm text-text-secondary">
+                        <span class="w-6 h-6 rounded-full bg-surface-muted flex items-center justify-center text-xs font-bold text-accent flex-shrink-0">1</span>
+                        Abra o app do seu banco e escolha <strong>Pagar com PIX</strong>
+                    </div>
+                    <div class="flex items-center gap-3 text-sm text-text-secondary">
+                        <span class="w-6 h-6 rounded-full bg-surface-muted flex items-center justify-center text-xs font-bold text-accent flex-shrink-0">2</span>
+                        Escaneie o QR Code ou cole a chave PIX
+                    </div>
+                    <div class="flex items-center gap-3 text-sm text-text-secondary">
+                        <span class="w-6 h-6 rounded-full bg-surface-muted flex items-center justify-center text-xs font-bold text-accent flex-shrink-0">3</span>
+                        Confirme o valor de <strong x-text="formatMoney(orderTotal)"></strong> e pague
+                    </div>
+                    <div class="flex items-center gap-3 text-sm text-text-secondary">
+                        <span class="w-6 h-6 rounded-full bg-surface-muted flex items-center justify-center text-xs font-bold text-accent flex-shrink-0">4</span>
+                        Clique em <strong>"Já Paguei"</strong> abaixo para confirmar
+                    </div>
+                </div>
+
+                <button @click="confirmPixPayment()"
+                        class="w-full py-4 rounded-2xl font-display font-bold text-base text-white shadow-lg transition-all active:scale-[0.98]"
+                        :style="'background:var(--accent)'">
+                    ✅ Já Paguei — Confirmar Pedido
+                </button>
+                <button @click="showPixModal=false; showCart=true" class="w-full mt-2 py-2 text-sm text-text-muted hover:text-text-primary transition-colors">
+                    ← Voltar ao carrinho
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════
+         TUTORIAL MODAL
+    ═══════════════════════════════════════════════ -->
+    <div x-show="showTutorial"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         class="fixed inset-0 z-[70] flex items-center justify-center px-4">
+        <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="showTutorial=false"></div>
+        <div class="relative bg-surface-card w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden"
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="scale-90 opacity-0"
+             x-transition:enter-end="scale-100 opacity-100">
+
+            <!-- Progress dots -->
+            <div class="flex gap-1.5 justify-center pt-5 px-6">
+                <template x-for="(step, i) in tutorialSteps" :key="i">
+                    <div class="h-1.5 rounded-full transition-all duration-300"
+                         :class="i === tutorialStep ? 'w-6' : 'w-1.5 bg-border'"
+                         :style="i === tutorialStep ? 'background:var(--accent);width:1.5rem' : ''"></div>
+                </template>
+            </div>
+
+            <div class="p-6">
+                <template x-if="tutorialSteps[tutorialStep]">
+                    <div>
+                        <div class="text-center mb-4">
+                            <div class="text-5xl mb-3" x-text="tutorialSteps[tutorialStep].icon"></div>
+                            <h3 class="font-display font-bold text-text-primary text-xl mb-1" x-text="tutorialSteps[tutorialStep].title"></h3>
+                            <p class="text-sm text-text-secondary leading-relaxed" x-text="tutorialSteps[tutorialStep].content"></p>
+                        </div>
+                        <div class="bg-surface-muted rounded-2xl p-3 mb-5">
+                            <p class="text-xs text-text-muted leading-relaxed">
+                                <span class="text-accent font-bold">💡 </span>
+                                <span x-text="tutorialSteps[tutorialStep].tip"></span>
+                            </p>
+                        </div>
+                    </div>
+                </template>
+
+                <div class="flex gap-2">
+                    <button x-show="tutorialStep > 0"
+                            @click="tutorialStep--"
+                            class="flex-1 py-3 rounded-2xl border-2 border-border font-medium text-sm text-text-primary hover:border-accent hover:text-accent transition-all">
+                        ← Anterior
+                    </button>
+                    <button x-show="tutorialStep === 0"
+                            @click="showTutorial=false"
+                            class="flex-1 py-3 rounded-2xl border-2 border-border font-medium text-sm text-text-muted hover:border-red-300 hover:text-red-400 transition-all">
+                        Pular
+                    </button>
+                    <button @click="if(tutorialStep < tutorialSteps.length-1) tutorialStep++; else showTutorial=false"
+                            class="flex-1 py-3 rounded-2xl font-bold text-sm text-white transition-all"
+                            :style="'background:var(--accent)'">
+                        <span x-show="tutorialStep < tutorialSteps.length-1">Próximo →</span>
+                        <span x-show="tutorialStep === tutorialSteps.length-1">🎉 Concluir</span>
+                    </button>
+                </div>
+                <p class="text-center text-xs text-text-muted mt-3">
+                    <span x-text="tutorialStep + 1"></span> de <span x-text="tutorialSteps.length"></span>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════
+    ═══════════════════════════════════════════════ -->
+    <div x-show="showThemePicker"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         class="fixed inset-0 z-50 flex items-center justify-center px-4">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="showThemePicker = false"></div>
+        <div class="relative bg-surface-card rounded-3xl shadow-2xl p-6 w-full max-w-sm"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="scale-95 opacity-0"
+             x-transition:enter-end="scale-100 opacity-100">
+            <h3 class="font-display font-bold text-text-primary text-lg mb-4">🎨 Tema e Cores</h3>
+
+            <!-- Theme Presets -->
+            <p class="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">Paletas</p>
+            <div class="grid grid-cols-4 gap-3 mb-5">
+                <template x-for="theme in themes" :key="theme.id">
+                    <button @click="setTheme(theme)"
+                            class="flex flex-col items-center gap-1.5 p-2 rounded-2xl border-2 transition-all"
+                            :class="currentTheme.id === theme.id ? 'border-accent' : 'border-transparent hover:border-border'">
+                        <div class="w-10 h-10 rounded-xl shadow-sm" :style="`background: ${theme.accent}`"></div>
+                        <span class="text-[10px] font-medium text-text-muted" x-text="theme.name"></span>
+                    </button>
+                </template>
+            </div>
+
+            <!-- Custom Color -->
+            <p class="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">Cor personalizada</p>
+            <div class="flex gap-3 items-center mb-5">
+                <input type="color" x-model="customAccent" @input="applyCustomColor($event.target.value)"
+                       class="w-12 h-12 rounded-xl cursor-pointer border-2 border-border bg-transparent p-1">
+                <div>
+                    <p class="text-sm font-medium text-text-primary" x-text="customAccent.toUpperCase()"></p>
+                    <p class="text-xs text-text-muted">Clique para escolher</p>
+                </div>
+            </div>
+
+            <!-- Dark Mode Toggle in picker -->
+            <div class="flex items-center justify-between bg-surface-muted rounded-2xl p-4">
+                <div>
+                    <p class="font-medium text-text-primary text-sm">Modo Escuro</p>
+                    <p class="text-xs text-text-muted">Interface dark automática</p>
+                </div>
+                <button @click="darkMode = !darkMode; saveSetting('darkMode', darkMode)"
+                        class="relative w-12 h-6 rounded-full transition-colors duration-300 flex-shrink-0"
+                        :style="darkMode ? 'background:var(--accent)' : 'background:#d1d5db'">
+                    <div class="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300"
+                         :class="darkMode ? 'translate-x-6' : 'translate-x-0.5'"></div>
+                </button>
+            </div>
+
+            <button @click="showThemePicker = false" class="w-full mt-4 py-3 rounded-2xl font-bold text-white transition-all" :style="'background:var(--accent)'">Pronto</button>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════
+         ADMIN LOGIN MODAL
+    ═══════════════════════════════════════════════ -->
+    <div x-show="showAdminLogin && !isAdmin"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         class="fixed inset-0 z-50 flex items-center justify-center px-4">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="showAdminLogin = false"></div>
+        <div class="relative bg-surface-card rounded-3xl shadow-2xl p-6 w-full max-w-sm"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="scale-95 opacity-0"
+             x-transition:enter-end="scale-100 opacity-100">
+            <h3 class="font-display font-bold text-text-primary text-xl mb-1">🔒 Área Admin</h3>
+            <p class="text-sm text-text-muted mb-5">Acesso restrito ao proprietário</p>
+            <input type="password" x-model="adminPassword" placeholder="Senha de acesso"
+                   @keyup.enter="loginAdmin()"
+                   class="form-input w-full mb-3">
+            <p x-show="adminError" class="text-red-500 text-xs mb-3" x-text="adminError"></p>
+            <button @click="loginAdmin()" class="w-full py-3 rounded-2xl font-bold text-white" :style="'background:var(--accent)'">Entrar</button>
+            <p class="text-center text-xs text-text-muted mt-3">Senha padrão: <code class="bg-surface-muted px-1 rounded">admin123</code></p>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════
+         ADMIN PANEL
+    ═══════════════════════════════════════════════ -->
+    <div x-show="isAdmin && showAdminPanel"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         class="fixed inset-0 z-50 bg-surface overflow-y-auto">
+
+        <!-- Admin Header -->
+        <div class="sticky top-0 bg-surface-card border-b border-border z-10">
+            <div class="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
+                <div>
+                    <h1 class="font-display font-bold text-text-primary text-lg">⚙️ Painel Admin</h1>
+                    <p class="text-xs text-text-muted">Gerencie seu cardápio digital</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button @click="tutorialStep=0; showTutorial=true" class="text-xs text-accent hover:text-accent/80 px-3 py-1.5 rounded-lg bg-accent/10 transition-colors font-medium">❓ Tutorial</button>
+                    <button @click="showAdminPanel = false; isAdmin = false" class="text-xs text-text-muted hover:text-text-primary px-3 py-1.5 rounded-lg bg-surface-muted transition-colors">Sair</button>
+                    <button @click="showAdminPanel = false" class="icon-btn">✕</button>
+                </div>
+            </div>
+
+            <!-- Admin Tabs -->
+            <div class="flex gap-2 px-4 pb-3 overflow-x-auto hide-scrollbar">
+                <template x-for="tab in adminTabs" :key="tab.id">
+                    <button @click="adminTab = tab.id"
+                            :class="adminTab === tab.id ? 'tab-active' : 'tab-inactive'"
+                            class="tab-btn">
+                        <span x-text="tab.icon" class="mr-1"></span>
+                        <span x-text="tab.name"></span>
+                    </button>
+                </template>
+            </div>
+        </div>
+
+        <div class="max-w-3xl mx-auto px-4 py-5 pb-24 space-y-5">
+
+            <!-- ── STORE SETTINGS ── -->
+            <div x-show="adminTab === 'store'" class="space-y-4">
+                <h2 class="admin-section-title">📋 Dados da Loja</h2>
+                <div class="admin-card space-y-3">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="col-span-2">
+                            <label class="form-label">Nome do Restaurante</label>
+                            <input type="text" x-model="config.restaurantName" class="form-input w-full">
+                        </div>
+                        <div>
+                            <label class="form-label">Cidade</label>
+                            <input type="text" x-model="config.city" class="form-input w-full">
+                        </div>
+                        <div>
+                            <label class="form-label">WhatsApp (com DDD)</label>
+                            <input type="text" x-model="config.whatsapp" placeholder="5582999999999" class="form-input w-full">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="form-label">Chave PIX</label>
+                            <input type="text" x-model="config.pixKey" placeholder="email, CPF ou telefone" class="form-input w-full">
+                        </div>
+                        <div>
+                            <label class="form-label">Taxa de Entrega (R$)</label>
+                            <input type="number" x-model.number="config.deliveryFee" step="0.50" class="form-input w-full">
+                        </div>
+                        <div>
+                            <label class="form-label">Pedido mínimo (R$)</label>
+                            <input type="number" x-model.number="config.minOrder" step="1" class="form-input w-full">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="form-label">Tempo de entrega</label>
+                            <input type="text" x-model="config.deliveryTime" placeholder="ex: 30-45 min" class="form-input w-full">
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between bg-surface-muted rounded-xl p-3">
+                        <div>
+                            <p class="font-medium text-text-primary text-sm">Loja Aberta</p>
+                            <p class="text-xs text-text-muted">Ative para receber pedidos</p>
+                        </div>
+                        <button @click="config.isOpen = !config.isOpen"
+                                class="relative w-12 h-6 rounded-full transition-colors duration-300"
+                                :style="config.isOpen ? 'background:var(--accent)' : 'background:#d1d5db'">
+                            <div class="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300"
+                                 :class="config.isOpen ? 'translate-x-6' : 'translate-x-0.5'"></div>
+                        </button>
+                    </div>
+                    <button @click="saveConfig()" class="btn-primary w-full">💾 Salvar Configurações</button>
+                </div>
+            </div>
+
+            <!-- ── CATEGORIES ── -->
+            <div x-show="adminTab === 'categories'" class="space-y-4">
+                <h2 class="admin-section-title">🏷️ Categorias</h2>
+
+                <div class="admin-card">
+                    <h3 class="font-display font-bold text-text-primary mb-3 text-sm">Adicionar Categoria</h3>
+                    <div class="grid grid-cols-3 gap-2 mb-3">
+                        <input type="text" x-model="newCategory.name" placeholder="Nome *" class="form-input col-span-2">
+                        <input type="text" x-model="newCategory.icon" placeholder="🍔 Emoji" class="form-input">
+                    </div>
+                    <button @click="addCategory()" class="btn-primary w-full">+ Adicionar Categoria</button>
+                </div>
+
+                <div class="space-y-2">
+                    <template x-for="(cat, idx) in categories" :key="cat.id">
+                        <div class="admin-card flex items-center justify-between gap-3">
+                            <div class="flex items-center gap-3">
+                                <span class="text-2xl" x-text="cat.icon || '📦'"></span>
+                                <div>
+                                    <p class="font-bold text-text-primary" x-text="cat.name"></p>
+                                    <p class="text-xs text-text-muted">
+                                        <span x-text="items.filter(i => i.category === cat.id).length"></span> item(s)
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button @click="cat.active = !cat.active"
+                                        class="text-xs px-2 py-1 rounded-lg transition-colors"
+                                        :class="cat.active ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'"
+                                        x-text="cat.active ? 'Ativa' : 'Inativa'"></button>
+                                <button @click="deleteCategory(idx)" class="text-red-400 hover:text-red-600 text-sm px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">🗑️</button>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- ── PRODUCTS ── -->
+            <div x-show="adminTab === 'products'" class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <h2 class="admin-section-title">🛍️ Produtos</h2>
+                    <button @click="openProductForm(null)" class="btn-primary text-sm px-4 py-2">+ Novo Produto</button>
+                </div>
+
+                <div class="space-y-2">
+                    <template x-for="(item, idx) in items" :key="item.id">
+                        <div class="admin-card flex items-center gap-3">
+                            <img :src="item.image || 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=100'"
+                                 class="w-14 h-14 rounded-xl object-cover flex-shrink-0">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2">
+                                    <p class="font-bold text-text-primary text-sm truncate" x-text="item.name"></p>
+                                    <span x-show="!item.available" class="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded dark:bg-red-900/30">Indisp.</span>
+                                    <span x-show="item.featured" class="text-[10px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded dark:bg-yellow-900/30">★ Dest.</span>
+                                </div>
+                                <p class="text-xs text-text-muted" x-text="getCategoryName(item.category)"></p>
+                                <div class="flex items-baseline gap-2 mt-1">
+                                    <span class="text-accent font-bold text-sm" x-text="formatMoney(item.promoPrice || item.price)"></span>
+                                    <span x-show="item.promoPrice" class="text-xs text-text-muted line-through" x-text="formatMoney(item.price)"></span>
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-1.5">
+                                <button @click="openProductForm(item)" class="text-xs px-3 py-1.5 bg-surface-muted rounded-lg text-text-primary hover:bg-accent/10 hover:text-accent transition-colors">✏️</button>
+                                <button @click="deleteProduct(idx)" class="text-xs px-3 py-1.5 bg-surface-muted rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">🗑️</button>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- ── PROMOTIONS ── -->
+            <div x-show="adminTab === 'promos'" class="space-y-4">
+                <h2 class="admin-section-title">🔥 Promoções</h2>
+
+                <div class="admin-card space-y-3">
+                    <h3 class="font-display font-bold text-text-primary text-sm mb-1">Nova Promoção</h3>
+                    <div class="grid grid-cols-2 gap-2">
+                        <input type="text" x-model="newPromo.name" placeholder="Nome da promoção *" class="form-input col-span-2">
+                        <select x-model="newPromo.type" class="form-input">
+                            <option value="percentage">% Desconto</option>
+                            <option value="fixed">R$ Desconto</option>
+                            <option value="freeDelivery">Frete Grátis</option>
+                            <option value="coupon">Cupom</option>
+                        </select>
+                        <input x-show="newPromo.type !== 'freeDelivery'" type="number" x-model.number="newPromo.value"
+                               :placeholder="newPromo.type === 'percentage' ? '10 (%)' : '5.00 (R$)'"
+                               class="form-input">
+                        <input x-show="newPromo.type === 'coupon'" type="text" x-model="newPromo.code"
+                               placeholder="Código do cupom" class="form-input col-span-2 uppercase">
+                        <input type="number" x-model.number="newPromo.minOrder" placeholder="Pedido mínimo R$" class="form-input">
+                        <input type="date" x-model="newPromo.expiresAt" class="form-input" title="Expiração">
+                    </div>
+                    <button @click="addPromo()" class="btn-primary w-full">+ Criar Promoção</button>
+                </div>
+
+                <div class="space-y-2">
+                    <template x-for="(promo, idx) in promotions" :key="promo.id">
+                        <div class="admin-card flex items-center justify-between gap-3"
+                             :class="!promo.active ? 'opacity-60' : ''">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
+                                     :style="promo.active ? 'background:var(--accent-light)' : 'background:#f3f4f6'">
+                                    <span x-show="promo.type === 'percentage'">%</span>
+                                    <span x-show="promo.type === 'fixed'">R$</span>
+                                    <span x-show="promo.type === 'freeDelivery'">🛵</span>
+                                    <span x-show="promo.type === 'coupon'">🎟️</span>
+                                </div>
+                                <div>
+                                    <p class="font-bold text-text-primary text-sm" x-text="promo.name"></p>
+                                    <p class="text-xs text-text-muted">
+                                        <span x-show="promo.type === 'percentage'" x-text="promo.value + '% off'"></span>
+                                        <span x-show="promo.type === 'fixed'" x-text="'-' + formatMoney(promo.value)"></span>
+                                        <span x-show="promo.type === 'freeDelivery'">Frete grátis</span>
+                                        <span x-show="promo.type === 'coupon'" x-text="'Cupom: ' + promo.code?.toUpperCase()"></span>
+                                        <span x-show="promo.minOrder > 0"> • Min: <span x-text="formatMoney(promo.minOrder)"></span></span>
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button @click="promo.active = !promo.active"
+                                        class="relative w-10 h-5 rounded-full transition-colors duration-300 flex-shrink-0"
+                                        :style="promo.active ? 'background:var(--accent)' : 'background:#d1d5db'">
+                                    <div class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-300"
+                                         :class="promo.active ? 'translate-x-5' : 'translate-x-0.5'"></div>
+                                </button>
+                                <button @click="deletePromo(idx)" class="text-red-400 hover:text-red-600 px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm">🗑️</button>
+                            </div>
+                        </div>
+                    </template>
+                    <div x-show="promotions.length === 0" class="text-center py-8 text-text-muted text-sm">
+                        Nenhuma promoção criada ainda.
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── ORDERS ── -->
+            <div x-show="adminTab === 'orders'" class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <h2 class="admin-section-title">📋 Histórico de Pedidos</h2>
+                    <button @click="orderHistory = []; localStorage.removeItem('orderHistory')" class="text-xs text-red-400 hover:text-red-600">Limpar</button>
+                </div>
+                <div class="space-y-3">
+                    <template x-for="order in orderHistory.slice().reverse()" :key="order.id">
+                        <div class="admin-card">
+                            <div class="flex justify-between items-start mb-2">
+                                <div>
+                                    <p class="font-bold text-text-primary text-sm" x-text="order.name"></p>
+                                    <p class="text-xs text-text-muted" x-text="order.address"></p>
+                                    <p class="text-xs text-text-muted" x-text="(order.date || '') + ' ' + (order.time || '')"></p>
+                                </div>
+                                <div class="text-right">
+                                    <p class="font-bold text-accent" x-text="formatMoney(order.total)"></p>
+                                    <span class="text-[10px] px-1.5 py-0.5 rounded-md font-medium"
+                                          :class="{
+                                            'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400': order.payment==='pix',
+                                            'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400': order.payment==='card',
+                                            'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400': order.payment==='cash'
+                                          }">
+                                        <span x-show="order.payment==='pix'">🔑 PIX</span>
+                                        <span x-show="order.payment==='card'">💳 Cartão</span>
+                                        <span x-show="order.payment==='cash'">💵 Dinheiro</span>
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="flex flex-wrap gap-1">
+                                <template x-for="item in order.items" :key="item.name">
+                                    <span class="text-xs bg-surface-muted text-text-muted px-2 py-0.5 rounded-lg">
+                                        <span x-text="item.qty + 'x ' + item.name"></span>
+                                    </span>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                    <div x-show="orderHistory.length === 0" class="text-center py-10 text-text-muted text-sm">
+                        Nenhum pedido registrado ainda.
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── REPORTS ── -->
+            <div x-show="adminTab === 'reports'" class="space-y-5">
+                <h2 class="admin-section-title">📊 Relatórios & Fechamento</h2>
+
+                <!-- Today KPIs -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="admin-card text-center">
+                        <div class="text-3xl font-display font-bold text-accent" x-text="todayStats.orders"></div>
+                        <div class="text-xs text-text-muted mt-1">Pedidos Hoje</div>
+                    </div>
+                    <div class="admin-card text-center">
+                        <div class="text-lg font-display font-bold text-accent" x-text="formatMoney(todayStats.revenue)"></div>
+                        <div class="text-xs text-text-muted mt-1">Faturamento Hoje</div>
+                    </div>
+                    <div class="admin-card text-center">
+                        <div class="text-lg font-display font-bold text-text-primary" x-text="formatMoney(todayStats.avgTicket)"></div>
+                        <div class="text-xs text-text-muted mt-1">Ticket Médio</div>
+                    </div>
+                    <div class="admin-card text-center">
+                        <div class="text-lg font-display font-bold text-text-primary" x-text="formatMoney(allTimeStats.totalRevenue)"></div>
+                        <div class="text-xs text-text-muted mt-1">Total Geral</div>
+                    </div>
+                </div>
+
+                <!-- Payment Breakdown -->
+                <div class="admin-card space-y-3">
+                    <h3 class="font-display font-bold text-text-primary text-sm">💳 Faturamento de Hoje por Pagamento</h3>
+                    <template x-for="method in [{id:'pix',name:'PIX',icon:'🔑',color:'#22c55e'},{id:'card',name:'Cartão',icon:'💳',color:'#3b82f6'},{id:'cash',name:'Dinheiro',icon:'💵',color:'#f59e0b'}]" :key="method.id">
+                        <div class="flex items-center gap-3">
+                            <span class="text-lg w-7 flex-shrink-0" x-text="method.icon"></span>
+                            <div class="flex-1">
+                                <div class="flex justify-between text-sm mb-1">
+                                    <span class="text-text-secondary" x-text="method.name"></span>
+                                    <span class="font-bold text-text-primary" x-text="formatMoney(todayStats.byPayment[method.id])"></span>
+                                </div>
+                                <div class="h-2 bg-surface-muted rounded-full overflow-hidden">
+                                    <div class="h-full rounded-full transition-all duration-500"
+                                         :style="`width:${todayStats.revenue > 0 ? (todayStats.byPayment[method.id]/todayStats.revenue*100) : 0}%; background:${method.color}`"></div>
+                                </div>
+                            </div>
+                            <span class="text-xs text-text-muted w-10 text-right"
+                                  x-text="todayStats.revenue > 0 ? ((todayStats.byPayment[method.id]/todayStats.revenue)*100).toFixed(0)+'%' : '0%'"></span>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Top Products -->
+                <div class="admin-card">
+                    <h3 class="font-display font-bold text-text-primary text-sm mb-3">🏆 Top Produtos de Hoje</h3>
+                    <div class="space-y-2" x-show="todayStats.topProducts.length > 0">
+                        <template x-for="(p, i) in todayStats.topProducts.slice(0,5)" :key="p.name">
+                            <div class="flex items-center gap-3">
+                                <span class="text-xs font-bold text-text-muted w-4" x-text="i+1 + 'º'"></span>
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex justify-between text-sm">
+                                        <span class="text-text-primary truncate" x-text="p.name"></span>
+                                        <span class="text-text-muted ml-2 flex-shrink-0" x-text="p.qty + 'x'"></span>
+                                    </div>
+                                    <div class="h-1.5 bg-surface-muted rounded-full mt-1 overflow-hidden">
+                                        <div class="h-full rounded-full transition-all duration-500"
+                                             :style="`width:${todayStats.topProducts[0]?.qty > 0 ? (p.qty/todayStats.topProducts[0].qty*100) : 0}%; background:var(--accent)`"></div>
+                                    </div>
+                                </div>
+                                <span class="text-xs font-bold text-accent flex-shrink-0" x-text="formatMoney(p.total)"></span>
+                            </div>
+                        </template>
+                    </div>
+                    <div x-show="todayStats.topProducts.length === 0" class="text-center py-6 text-text-muted text-sm">
+                        Nenhuma venda hoje ainda
+                    </div>
+                </div>
+
+                <!-- Historical Chart (simple text-based) -->
+                <div class="admin-card" x-show="allTimeStats.byDate.length > 0">
+                    <h3 class="font-display font-bold text-text-primary text-sm mb-3">📅 Histórico por Dia</h3>
+                    <div class="space-y-1.5 max-h-48 overflow-y-auto">
+                        <template x-for="d in allTimeStats.byDate.slice().reverse().slice(0,14)" :key="d.date">
+                            <div class="flex items-center gap-3 text-xs">
+                                <span class="text-text-muted w-20 flex-shrink-0" x-text="d.date"></span>
+                                <div class="flex-1 h-5 bg-surface-muted rounded overflow-hidden relative">
+                                    <div class="h-full rounded transition-all duration-500 opacity-70"
+                                         :style="`width:${allTimeStats.totalRevenue > 0 ? (d.revenue/Math.max(...allTimeStats.byDate.map(x=>x.revenue))*100) : 0}%; background:var(--accent)`"></div>
+                                </div>
+                                <span class="text-text-primary font-bold w-20 text-right" x-text="formatMoney(d.revenue)"></span>
+                                <span class="text-text-muted w-12 text-right" x-text="d.orders + ' ped.'"></span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Fechamento do Dia - MAIN FEATURE -->
+                <div class="admin-card border-2 border-accent/30" style="background: linear-gradient(135deg, rgba(var(--accent-rgb),0.04) 0%, transparent 100%)">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" :style="'background:var(--accent-light)'">📊</div>
+                        <div>
+                            <h3 class="font-display font-bold text-text-primary text-base">Fechamento do Dia</h3>
+                            <p class="text-xs text-text-muted" x-text="todayStats.date + ' • ' + todayStats.orders + ' pedido(s) • ' + formatMoney(todayStats.revenue)"></p>
+                        </div>
+                    </div>
+
+                    <button @click="closeDayReport()"
+                            class="w-full py-3 rounded-2xl font-display font-bold text-white text-sm mb-4 transition-all active:scale-[0.98]"
+                            :style="'background:var(--accent)'">
+                        🔒 Registrar Fechamento do Dia
+                    </button>
+
+                    <p class="text-xs text-text-muted uppercase tracking-wider font-medium mb-3">Exportar Relatórios</p>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button @click="exportExcel()"
+                                class="export-btn flex flex-col items-center gap-2 p-4 rounded-2xl border-2 border-border bg-surface hover:border-green-400 hover:bg-green-50 dark:hover:bg-green-900/10 transition-all group">
+                            <span class="text-2xl group-hover:scale-110 transition-transform">📊</span>
+                            <div class="text-center">
+                                <p class="text-xs font-bold text-text-primary">Excel</p>
+                                <p class="text-[10px] text-text-muted">5 planilhas</p>
+                            </div>
+                        </button>
+                        <button @click="exportCSV()"
+                                class="export-btn flex flex-col items-center gap-2 p-4 rounded-2xl border-2 border-border bg-surface hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all group">
+                            <span class="text-2xl group-hover:scale-110 transition-transform">📄</span>
+                            <div class="text-center">
+                                <p class="text-xs font-bold text-text-primary">CSV</p>
+                                <p class="text-[10px] text-text-muted">Pedidos do dia</p>
+                            </div>
+                        </button>
+                        <button @click="exportJSON()"
+                                class="export-btn flex flex-col items-center gap-2 p-4 rounded-2xl border-2 border-border bg-surface hover:border-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/10 transition-all group">
+                            <span class="text-2xl group-hover:scale-110 transition-transform">💾</span>
+                            <div class="text-center">
+                                <p class="text-xs font-bold text-text-primary">JSON</p>
+                                <p class="text-[10px] text-text-muted">Backup completo</p>
+                            </div>
+                        </button>
+                        <button @click="printReport()"
+                                class="export-btn flex flex-col items-center gap-2 p-4 rounded-2xl border-2 border-border bg-surface hover:border-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/10 transition-all group">
+                            <span class="text-2xl group-hover:scale-110 transition-transform">🖨️</span>
+                            <div class="text-center">
+                                <p class="text-xs font-bold text-text-primary">Imprimir/PDF</p>
+                                <p class="text-[10px] text-text-muted">Relatório visual</p>
+                            </div>
+                        </button>
+                    </div>
+
+                    <div class="mt-3 bg-surface-muted rounded-xl p-3">
+                        <p class="text-[10px] text-text-muted leading-relaxed">
+                            💡 <strong>Excel</strong> gera 5 planilhas: Resumo, Pedidos, Itens, Ranking de Produtos e Histórico Geral.
+                            <strong>JSON</strong> é o backup completo recomendado para armazenamento de longo prazo.
+                        </p>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════
+         PRODUCT FORM MODAL (Admin)
+    ═══════════════════════════════════════════════ -->
+    <div x-show="showProductForm"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         class="fixed inset-0 z-[60] flex items-end sm:items-center justify-center">
+        <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="showProductForm = false"></div>
+        <div class="relative bg-surface-card w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-y-auto max-h-[92vh] p-6"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="translate-y-full sm:scale-95 opacity-0"
+             x-transition:enter-end="translate-y-0 sm:scale-100 opacity-100">
+            <h3 class="font-display font-bold text-text-primary text-lg mb-5"
+                x-text="editingProduct?.id ? '✏️ Editar Produto' : '➕ Novo Produto'"></h3>
+            <div class="space-y-3">
+                <div>
+                    <label class="form-label">Nome do produto *</label>
+                    <input type="text" x-model="editingProduct.name" class="form-input w-full">
+                </div>
+                <div>
+                    <label class="form-label">Descrição</label>
+                    <textarea x-model="editingProduct.desc" rows="2" class="form-input w-full resize-none"></textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="form-label">Preço R$ *</label>
+                        <input type="number" step="0.01" x-model.number="editingProduct.price" class="form-input w-full">
+                    </div>
+                    <div>
+                        <label class="form-label">Preço Promo R$</label>
+                        <input type="number" step="0.01" x-model.number="editingProduct.promoPrice" placeholder="Opcional" class="form-input w-full">
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label">Categoria</label>
+                    <select x-model="editingProduct.category" class="form-input w-full">
+                        <template x-for="cat in categories" :key="cat.id">
+                            <option :value="cat.id" x-text="cat.icon + ' ' + cat.name"></option>
+                        </template>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">URL da imagem</label>
+                    <input type="url" x-model="editingProduct.image" placeholder="https://..." class="form-input w-full">
+                </div>
+                <div x-show="editingProduct.image" class="rounded-xl overflow-hidden h-32">
+                    <img :src="editingProduct.image" class="w-full h-full object-cover" @error="editingProduct.image = ''">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="flex items-center justify-between bg-surface-muted rounded-xl p-3">
+                        <span class="text-sm font-medium text-text-primary">Disponível</span>
+                        <button @click="editingProduct.available = !editingProduct.available"
+                                class="relative w-10 h-5 rounded-full transition-colors"
+                                :style="editingProduct.available ? 'background:var(--accent)' : 'background:#d1d5db'">
+                            <div class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                 :class="editingProduct.available ? 'translate-x-5' : 'translate-x-0.5'"></div>
+                        </button>
+                    </div>
+                    <div class="flex items-center justify-between bg-surface-muted rounded-xl p-3">
+                        <span class="text-sm font-medium text-text-primary">Destaque</span>
+                        <button @click="editingProduct.featured = !editingProduct.featured"
+                                class="relative w-10 h-5 rounded-full transition-colors"
+                                :style="editingProduct.featured ? 'background:var(--accent)' : 'background:#d1d5db'">
+                            <div class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                 :class="editingProduct.featured ? 'translate-x-5' : 'translate-x-0.5'"></div>
+                        </button>
+                    </div>
+                </div>
+                <button @click="saveProduct()" class="btn-primary w-full mt-2">
+                    <span x-text="editingProduct?.id ? '💾 Salvar Alterações' : '+ Adicionar Produto'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Cart Preview (when items in cart, not on cart page) -->
+    <div x-show="cart.length > 0 && !showCart"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 translate-y-4"
+         x-transition:enter-end="opacity-100 translate-y-0"
+         class="fixed bottom-6 left-1/2 -translate-x-1/2 z-30">
+        <button @click="showCart = true"
+                class="flex items-center gap-3 px-5 py-3.5 rounded-2xl text-white shadow-2xl transition-all active:scale-95 font-medium"
+                :style="'background:var(--accent)'">
+            <span class="bg-white/20 rounded-lg px-2 py-0.5 font-display font-bold text-sm" x-text="cartTotalItems"></span>
+            <span class="text-sm">Ver Pedido</span>
+            <span class="font-display font-bold text-sm" x-text="formatMoney(orderTotal)"></span>
+        </button>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
