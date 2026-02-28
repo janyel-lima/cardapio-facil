@@ -288,6 +288,91 @@
 .btn-primary:active { transform: scale(0.97); }
 
 /* ═══════════════════════════════════════════════════════
+   COMPLEMENT COMPONENTS (Customer Modal)
+═══════════════════════════════════════════════════════ */
+
+/* Complement group container */
+.complement-group {
+  background-color: var(--surface-card);
+  border: 1.5px solid var(--border);
+  border-radius: 1rem;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+.complement-group:focus-within {
+  border-color: rgba(var(--accent-rgb), 0.4);
+}
+
+/* Individual complement option button */
+.complement-option {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.complement-option:hover {
+  background-color: var(--surface-muted);
+}
+.complement-option:active {
+  background-color: rgba(var(--accent-rgb), 0.06);
+}
+
+/* Selected option highlight — left border accent line */
+.complement-option.selected,
+.complement-option[class*="border-accent"] {
+  background-color: rgba(var(--accent-rgb), 0.05);
+}
+
+/* Complement summary bar at bottom of modal */
+.complement-summary {
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.08) 0%, rgba(var(--accent-rgb), 0.04) 100%);
+  border: 1.5px solid rgba(var(--accent-rgb), 0.2);
+  border-radius: 0.875rem;
+}
+
+/* ═══════════════════════════════════════════════════════
+   COMPLEMENT COMPONENTS (Admin Product Form)
+═══════════════════════════════════════════════════════ */
+
+/* Admin complement group wrapper */
+.complement-group-admin {
+  background-color: var(--surface-card);
+  border: 1.5px solid var(--border);
+  border-radius: 0.875rem;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.complement-group-admin:hover {
+  border-color: rgba(var(--accent-rgb), 0.35);
+  box-shadow: 0 2px 12px rgba(var(--accent-rgb), 0.08);
+}
+
+/* ═══════════════════════════════════════════════════════
+   AUDIT LOG COMPONENTS
+═══════════════════════════════════════════════════════ */
+
+/* Individual audit entry card */
+.audit-entry {
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.audit-entry:hover {
+  background-color: var(--surface-muted) !important;
+}
+
+/* Lockout warning banner in admin login */
+.lockout-banner {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%);
+  border: 1.5px solid rgba(239, 68, 68, 0.3);
+  border-radius: 0.875rem;
+}
+.dark .lockout-banner {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(239, 68, 68, 0.07) 100%);
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+/* ═══════════════════════════════════════════════════════
    THEME PRESETS — applied dynamically via JS
 ═══════════════════════════════════════════════════════ */
 [data-theme="red"]    { --accent: #ef4444; --accent-hover: #dc2626; --accent-rgb: 239,68,68; }
@@ -312,6 +397,15 @@
 .product-card {
   animation: cardIn 0.3s ease both;
 }
+
+/* Staggered product card animation */
+.product-card:nth-child(1)  { animation-delay: 0.03s; }
+.product-card:nth-child(2)  { animation-delay: 0.06s; }
+.product-card:nth-child(3)  { animation-delay: 0.09s; }
+.product-card:nth-child(4)  { animation-delay: 0.12s; }
+.product-card:nth-child(5)  { animation-delay: 0.15s; }
+.product-card:nth-child(6)  { animation-delay: 0.18s; }
+.product-card:nth-child(n+7){ animation-delay: 0.21s; }
 
 /* Bounce on add to cart */
 @keyframes bounceIn {
@@ -428,4 +522,139 @@ input[type="color"]::-webkit-color-swatch { border: none; border-radius: 0.5rem;
   background: linear-gradient(90deg, var(--surface-muted) 25%, var(--border) 50%, var(--surface-muted) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
+}
+
+/* ═══════════════════════════════════════════════════════
+   DIVIDERS
+═══════════════════════════════════════════════════════ */
+.divide-y > * + * {
+  border-top-width: 1px;
+  border-color: var(--border);
+}
+.divide-border > * + * {
+  border-color: var(--border);
+}
+
+/* ═══════════════════════════════════════════════════════
+   DARK MODE — Tailwind overrides for surface tokens
+═══════════════════════════════════════════════════════ */
+
+/* Ensure Tailwind dark: variants that reference CSS vars work */
+.dark .bg-surface      { background-color: var(--surface); }
+.dark .bg-surface-card { background-color: var(--surface-card); }
+.dark .bg-surface-muted{ background-color: var(--surface-muted); }
+.dark .border-border   { border-color: var(--border); }
+.dark .text-text-primary   { color: var(--text-primary); }
+.dark .text-text-secondary { color: var(--text-secondary); }
+.dark .text-text-muted     { color: var(--text-muted); }
+
+/* ── Dark mode card elevations ── */
+.dark .admin-card {
+  background-color: var(--surface-card);
+  border-color: var(--border);
+}
+.dark .complement-group {
+  background-color: var(--surface-card);
+  border-color: var(--border);
+}
+.dark .complement-group-admin {
+  background-color: var(--surface-card);
+  border-color: var(--border);
+}
+
+/* ── Dark mode form inputs ── */
+.dark .form-input {
+  background-color: var(--surface-muted);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+.dark .form-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.18);
+}
+
+/* ── Dark mode tab inactive ── */
+.dark .tab-inactive {
+  background-color: var(--surface-card);
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+/* ── Dark mode icon-btn ── */
+.dark .icon-btn {
+  background: var(--surface-muted);
+  color: var(--text-primary);
+}
+.dark .icon-btn:hover {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+/* ─────────────────────────────────────────────────────
+   PRODUCT MODAL — complement indicator shapes
+   The JS binds :style for border-radius inline,
+   so we only need fallback shapes here.
+───────────────────────────────────────────────────── */
+/* Radio indicator (single select) — circle */
+.complement-option [data-type="single"] .indicator {
+  border-radius: 50%;
+}
+/* Checkbox indicator (multiple select) — rounded square */
+.complement-option [data-type="multiple"] .indicator {
+  border-radius: 5px;
+}
+
+/* ═══════════════════════════════════════════════════════
+   FLOATING CART PREVIEW — pulse ring on new item
+═══════════════════════════════════════════════════════ */
+@keyframes cartPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.5); }
+  70%  { box-shadow: 0 0 0 12px rgba(var(--accent-rgb), 0); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0); }
+}
+.cart-btn-pulse {
+  animation: cartPulse 0.6s ease;
+}
+
+/* ═══════════════════════════════════════════════════════
+   ADMIN SESSION COUNTDOWN — color states
+═══════════════════════════════════════════════════════ */
+.session-critical {
+  color: #ef4444 !important;
+  animation: sessionBlink 1s step-end infinite;
+}
+@keyframes sessionBlink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+/* ═══════════════════════════════════════════════════════
+   INTEGRITY BADGES (orders + audit)
+═══════════════════════════════════════════════════════ */
+.integrity-ok {
+  background-color: rgba(34, 197, 94, 0.1);
+  color: #15803d;
+  border: 1px solid rgba(34, 197, 94, 0.2);
+}
+.dark .integrity-ok {
+  background-color: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+  border-color: rgba(34, 197, 94, 0.25);
+}
+.integrity-fail {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #b91c1c;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+.dark .integrity-fail {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+/* ═══════════════════════════════════════════════════════
+   SMOOTH BODY TRANSITION (dark ↔ light)
+═══════════════════════════════════════════════════════ */
+body {
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
