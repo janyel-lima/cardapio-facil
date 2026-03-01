@@ -1,0 +1,667 @@
+<div x-show="showAdminLogin && !isAdmin" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" class="fixed inset-0 z-50 flex items-center justify-center px-4">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="showAdminLogin=false"></div>
+    <div class="relative bg-surface-card rounded-3xl shadow-2xl p-6 w-full max-w-sm" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="scale-95 opacity-0" x-transition:enter-end="scale-100 opacity-100">
+        <h3 class="font-display font-bold text-text-primary text-xl mb-1">🔒 Área Admin</h3>
+        <p class="text-sm text-text-muted mb-5">Acesso restrito ao proprietário</p>
+
+        <div x-show="isLockedOut" class="lockout-banner rounded-xl p-3 mb-4">
+            <div class="flex items-center gap-2">
+                <span class="text-xl">🔐</span>
+                <div>
+                    <p class="text-sm font-bold text-red-600 dark:text-red-400">Conta bloqueada</p>
+                    <p class="text-xs text-red-500">Aguarde <span x-text="lockoutRemainingFormatted" class="font-mono font-bold"></span> para tentar novamente</p>
+                </div>
+            </div>
+        </div>
+
+        <div x-show="failedAttempts > 0 && !isLockedOut" class="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 mb-4">
+            <p class="text-xs text-yellow-600 dark:text-yellow-400">⚠️ <span x-text="SECURITY_MAX_ATTEMPTS - failedAttempts"></span> tentativa(s) restante(s) antes do bloqueio</p>
+        </div>
+
+        <input type="password" x-model="adminPassword" placeholder="Senha de acesso"
+               @keyup.enter="loginAdmin()"
+               :disabled="isLockedOut"
+               class="form-input w-full mb-3" :class="isLockedOut?'opacity-50 cursor-not-allowed':''">
+        <p x-show="adminError" class="text-red-500 text-xs mb-3" x-text="adminError"></p>
+        <button @click="loginAdmin()" :disabled="isLockedOut" class="w-full py-3 rounded-2xl font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed" :style="'background:var(--accent)'">Entrar</button>
+        <p class="text-center text-xs text-text-muted mt-3">Senha padrão: <code class="bg-surface-muted px-1 rounded">admin123</code></p>
+    </div>
+</div>
+
+<div x-show="isAdmin && showAdminPanel" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" class="fixed inset-0 z-50 bg-surface overflow-y-auto">
+
+    <!-- ADMIN HEADER -->
+    <div class="sticky top-0 z-10" style="background:var(--surface-overlay);backdrop-filter:blur(20px) saturate(180%);-webkit-backdrop-filter:blur(20px) saturate(180%);border-bottom:1px solid var(--border);box-shadow:var(--shadow-sm)">
+        <div class="max-w-3xl mx-auto px-4">
+            <div class="flex items-center justify-between py-3">
+                <div>
+                    <h1 class="font-display font-bold text-text-primary text-base leading-tight">⚙️ Painel Admin</h1>
+                    <div class="flex items-center gap-1.5 mt-0.5">
+                        <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse flex-shrink-0"></span>
+                        <p class="text-[11px] text-text-muted">
+                            Sessão expira em
+                            <span class="font-mono font-bold" style="color:#22c55e" x-text="sessionCountdownLabel"></span>
+                        </p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <button @click="tutorialStep=0; showTutorial=true" class="icon-btn flex-shrink-0" title="Tutorial">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </button>
+                    <div class="w-px h-5 flex-shrink-0" style="background:var(--border)"></div>
+                    <button @click="logoutAdmin()" class="flex items-center gap-1.5 text-[11px] font-semibold text-text-muted hover:text-red-400 px-2.5 py-1.5 rounded-lg transition-colors flex-shrink-0" style="background:var(--surface-muted)">
+                        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                        </svg>
+                        <span class="hidden sm:inline">Sair</span>
+                    </button>
+                    <button @click="showAdminPanel=false" class="icon-btn flex-shrink-0" title="Fechar">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="pb-3">
+                <div class="grid gap-1" style="grid-template-columns: repeat(auto-fit, minmax(72px, 1fr))">
+                    <template x-for="tab in adminTabs" :key="tab.id">
+                        <button @click="adminTab = tab.id" class="admin-tab-btn" :class="adminTab === tab.id ? 'admin-tab-active' : 'admin-tab-inactive'">
+                            <span class="text-base leading-none select-none" x-text="tab.icon"></span>
+                            <span class="text-[10px] font-semibold leading-tight text-center" x-text="tab.name"></span>
+                        </button>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-4xl mx-auto px-4 py-5 pb-24 space-y-5">
+
+        <!-- ═══ STORE TAB ═══ -->
+        <div x-show="adminTab==='store'" class="space-y-4">
+            <h2 class="admin-section-title">📋 Dados da Loja</h2>
+            <div class="admin-card space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="col-span-2"><label class="form-label">Nome do Restaurante</label><input type="text" x-model="config.restaurantName" class="form-input w-full"></div>
+                    <div><label class="form-label">Cidade</label><input type="text" x-model="config.city" class="form-input w-full"></div>
+                    <div><label class="form-label">WhatsApp (com DDD)</label><input type="text" x-model="config.whatsapp" placeholder="5582999999999" class="form-input w-full"></div>
+                    <div class="col-span-2"><label class="form-label">Chave PIX</label><input type="text" x-model="config.pixKey" class="form-input w-full"></div>
+                    <div><label class="form-label">Taxa de Entrega (R$)</label><input type="number" x-model.number="config.deliveryFee" step="0.50" class="form-input w-full"></div>
+                    <div><label class="form-label">Pedido mínimo (R$)</label><input type="number" x-model.number="config.minOrder" class="form-input w-full"></div>
+                    <div class="col-span-2"><label class="form-label">Tempo de entrega</label><input type="text" x-model="config.deliveryTime" class="form-input w-full"></div>
+                </div>
+                <div class="border-t border-border pt-3">
+                    <h3 class="text-xs font-bold text-text-muted uppercase tracking-wider mb-2">🔐 Segurança</h3>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div class="col-span-2"><label class="form-label">Nova Senha Admin</label><input type="password" x-model="config.adminPass" placeholder="••••••••" class="form-input w-full"></div>
+                    </div>
+                    <p class="text-xs text-text-muted mt-1.5">⚠️ Mínimo 8 caracteres recomendado. Nunca compartilhe sua senha.</p>
+                </div>
+                <div class="flex items-center justify-between bg-surface-muted rounded-xl p-3">
+                    <div><p class="font-medium text-text-primary text-sm">Loja Aberta</p><p class="text-xs text-text-muted">Ative para receber pedidos</p></div>
+                    <button @click="config.isOpen=!config.isOpen" class="relative w-12 h-6 rounded-full transition-colors duration-300" :style="config.isOpen?'background:var(--accent)':'background:#d1d5db'">
+                        <div class="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300" :class="config.isOpen?'translate-x-6':'translate-x-0.5'"></div>
+                    </button>
+                </div>
+                <button @click="saveConfig()" class="btn-primary w-full">💾 Salvar Configurações</button>
+            </div>
+        </div>
+
+        <!-- ═══ CATEGORIES TAB ═══ -->
+        <div x-show="adminTab==='categories'" class="space-y-4" x-data="emojiPickerData()">
+    <h2 class="admin-section-title">🏷️ Categorias</h2>
+    <div class="admin-card">
+        <h3 class="font-display font-bold text-text-primary mb-3 text-sm">Adicionar Categoria</h3>
+        <div class="grid grid-cols-3 gap-2 mb-3">
+            <input type="text" x-model="newCategory.name" placeholder="Nome *" class="form-input col-span-2">
+
+            <!-- ── EMOJI PICKER ── -->
+            <div class="relative">
+                <button type="button"
+                    @click="showEmojiPicker = !showEmojiPicker"
+                    class="form-input w-full flex items-center justify-between gap-1 cursor-pointer select-none"
+                    title="Escolher emoji">
+                    <span class="text-xl leading-none" x-text="newCategory.icon || '📦'"></span>
+                    <svg class="w-3 h-3 flex-shrink-0 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+
+                <!-- Picker panel -->
+                <div x-show="showEmojiPicker"
+                     x-transition:enter="transition ease-out duration-150"
+                     x-transition:enter-start="opacity-0 scale-95"
+                     x-transition:enter-end="opacity-100 scale-100"
+                     @click.away="showEmojiPicker=false; emojiSearch=''"
+                     class="absolute right-0 top-full mt-1.5 z-50 rounded-2xl shadow-2xl border border-border p-3 w-72"
+                     style="background:var(--surface-card)">
+
+                    <!-- Search -->
+                    <div class="relative mb-2">
+                        <input type="text"
+                            x-model="emojiSearch"
+                            placeholder="Buscar emoji (pizza, frango…)"
+                            @click.stop
+                            class="form-input w-full text-xs !py-2 !pl-8">
+                        <svg class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z"/>
+                        </svg>
+                    </div>
+
+                    <!-- Emoji grid -->
+                    <div class="grid grid-cols-8 gap-0.5 max-h-52 overflow-y-auto rounded-xl p-1"
+                         style="background:var(--surface-muted)">
+                        <template x-for="em in filteredEmojis" :key="em.n">
+                            <button type="button"
+                                @click.stop="newCategory.icon = em.e; closeEmojiPicker()"
+                                :title="em.n"
+                                class="w-8 h-8 flex items-center justify-center text-lg rounded-lg hover:scale-110 transition-transform cursor-pointer"
+                                x-text="em.e">
+                            </button>
+                        </template>
+                        <div x-show="filteredEmojis.length === 0"
+                             class="col-span-8 text-center py-4 text-xs text-text-muted">
+                            Nenhum emoji encontrado
+                        </div>
+                    </div>
+
+                    <!-- Clear selection -->
+                    <button type="button"
+                        @click.stop="newCategory.icon = ''; closeEmojiPicker()"
+                        class="mt-2 w-full text-[10px] text-text-muted hover:text-text-primary py-1 rounded-lg transition-colors"
+                        style="background:var(--surface-muted)">
+                        Limpar
+                    </button>
+                </div>
+            </div>
+            <!-- ── /EMOJI PICKER ── -->
+        </div>
+        <button @click="addCategory()" class="btn-primary w-full">+ Adicionar Categoria</button>
+    </div>
+
+    <div class="space-y-2">
+        <template x-for="(cat, idx) in categories" :key="cat.id">
+            <div class="admin-card flex items-center justify-between gap-3">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl" x-text="cat.icon||'📦'"></span>
+                    <div>
+                        <p class="font-bold text-text-primary" x-text="cat.name"></p>
+                        <p class="text-xs text-text-muted">
+                            <span x-text="items.filter(i=>i.category===cat.id).length"></span> item(s)
+                        </p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button @click="cat.active=!cat.active; categories=[...categories]"
+                            class="text-xs px-2 py-1 rounded-lg transition-colors"
+                            :class="cat.active?'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400':'bg-gray-100 text-gray-500 dark:bg-gray-800'"
+                            x-text="cat.active?'Ativa':'Inativa'">
+                    </button>
+                    <button @click="deleteCategory(idx)"
+                            class="text-red-400 hover:text-red-600 text-sm px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20">
+                        🗑️
+                    </button>
+                </div>
+            </div>
+        </template>
+    </div>
+</div>
+
+        <!-- ═══ PRODUCTS TAB ═══ -->
+        <div x-show="adminTab==='products'" class="space-y-4">
+            <div class="flex items-center justify-between">
+                <h2 class="admin-section-title">🛍️ Produtos</h2>
+                <button @click="openProductForm(null)" class="btn-primary text-sm px-4 py-2">+ Novo Produto</button>
+            </div>
+            <div class="space-y-2">
+                <template x-for="(item, idx) in items" :key="item.id">
+                    <div class="admin-card flex items-center gap-3">
+                        <img :src="item.image||'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=100'" class="w-14 h-14 rounded-xl object-cover flex-shrink-0">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <p class="font-bold text-text-primary text-sm truncate" x-text="item.name"></p>
+                                <span x-show="!item.available" class="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded dark:bg-red-900/30">Indisp.</span>
+                                <span x-show="item.featured" class="text-[10px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded dark:bg-yellow-900/30">★</span>
+                                <span x-show="item.complements && item.complements.length > 0" class="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded dark:bg-purple-900/30">
+                                    <span x-text="item.complements.length"></span> grupo(s)
+                                </span>
+                            </div>
+                            <p class="text-xs text-text-muted" x-text="getCategoryName(item.category)"></p>
+                            <div class="flex items-baseline gap-2 mt-1">
+                                <span class="text-accent font-bold text-sm" x-text="formatMoney(item.promoPrice||item.price)"></span>
+                                <span x-show="item.promoPrice" class="text-xs text-text-muted line-through" x-text="formatMoney(item.price)"></span>
+                            </div>
+                        </div>
+                        <div class="flex flex-col gap-1.5">
+                            <button @click="openProductForm(item)" class="text-xs px-3 py-1.5 bg-surface-muted rounded-lg text-text-primary hover:bg-accent/10 hover:text-accent transition-colors">✏️</button>
+                            <button @click="deleteProduct(idx)" class="text-xs px-3 py-1.5 bg-surface-muted rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">🗑️</button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- ═══ PROMOS TAB ═══ -->
+        <div x-show="adminTab==='promos'" class="space-y-4">
+            <h2 class="admin-section-title">🔥 Promoções</h2>
+            <div class="admin-card space-y-3">
+                <h3 class="font-display font-bold text-text-primary text-sm mb-1">Nova Promoção</h3>
+                <div class="grid grid-cols-2 gap-2">
+                    <input type="text" x-model="newPromo.name" placeholder="Nome *" class="form-input col-span-2">
+                    <select x-model="newPromo.type" class="form-input"><option value="percentage">% Desconto</option><option value="fixed">R$ Desconto</option><option value="freeDelivery">Frete Grátis</option><option value="coupon">Cupom</option></select>
+                    <input x-show="newPromo.type!=='freeDelivery'" type="number" x-model.number="newPromo.value" :placeholder="newPromo.type==='percentage'?'10 (%)':'5.00 (R$)'" class="form-input">
+                    <input x-show="newPromo.type==='coupon'" type="text" x-model="newPromo.code" placeholder="Código do cupom" class="form-input col-span-2 uppercase">
+                    <input type="number" x-model.number="newPromo.minOrder" placeholder="Pedido mínimo R$" class="form-input">
+                    <input type="date" x-model="newPromo.expiresAt" class="form-input">
+                </div>
+                <button @click="addPromo()" class="btn-primary w-full">+ Criar Promoção</button>
+            </div>
+            <div class="space-y-2">
+                <template x-for="(promo, idx) in promotions" :key="promo.id">
+                    <div class="admin-card flex items-center justify-between gap-3" :class="!promo.active?'opacity-60':''">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" :style="promo.active?'background:var(--accent-light)':'background:#f3f4f6'">
+                                <span x-show="promo.type==='percentage'">%</span><span x-show="promo.type==='fixed'">R$</span><span x-show="promo.type==='freeDelivery'">🛵</span><span x-show="promo.type==='coupon'">🎟️</span>
+                            </div>
+                            <div>
+                                <p class="font-bold text-text-primary text-sm" x-text="promo.name"></p>
+                                <p class="text-xs text-text-muted">
+                                    <span x-show="promo.type==='percentage'" x-text="promo.value+'% off'"></span>
+                                    <span x-show="promo.type==='fixed'" x-text="'-'+formatMoney(promo.value)"></span>
+                                    <span x-show="promo.type==='freeDelivery'">Frete grátis</span>
+                                    <span x-show="promo.type==='coupon'" x-text="'Cupom: '+(promo.code||'').toUpperCase()"></span>
+                                    <span x-show="promo.minOrder>0"> • Min: <span x-text="formatMoney(promo.minOrder)"></span></span>
+                                </p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button @click="promo.active=!promo.active; promotions=[...promotions]" class="relative w-10 h-5 rounded-full transition-colors duration-300 flex-shrink-0" :style="promo.active?'background:var(--accent)':'background:#d1d5db'"><div class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-300" :class="promo.active?'translate-x-5':'translate-x-0.5'"></div></button>
+                            <button @click="deletePromo(idx)" class="text-red-400 hover:text-red-600 px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-sm">🗑️</button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- ═══ ORDER MANAGER TAB ═══ -->
+        <div x-show="adminTab==='order-manager'" class="space-y-4">
+
+            <div class="flex items-center gap-3">
+                <button x-show="omView === 'detail'" @click="omCloseDetail()" class="icon-btn w-9 h-9 flex-shrink-0">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                    </svg>
+                </button>
+                <div class="flex-1 min-w-0">
+                    <h2 class="admin-section-title">
+                        <span x-show="omView !== 'detail'">⚙️ Gestor de Pedidos</span>
+                        <span x-show="omView === 'detail'" x-text="'← Pedido #' + (omSelectedOrder?.orderNumber ?? '')"></span>
+                    </h2>
+                    <p class="text-xs text-text-muted mt-0.5">
+                        <span x-show="omView !== 'detail'"><span x-text="omTodayKpi.active"></span> ativos hoje · <span x-text="formatMoney(omTodayKpi.revenue)"></span></span>
+                        <span x-show="omView === 'detail'" x-text="omSelectedOrder ? (omSelectedOrder.date ?? '') + ' às ' + (omSelectedOrder.time ?? '') : ''"></span>
+                    </p>
+                </div>
+                <div x-show="omView !== 'detail'" class="flex gap-0.5 rounded-xl p-0.5 border border-border" style="background:var(--surface-muted)">
+                    <button @click="omView = 'queue'" class="px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all" :style="omView === 'queue' ? 'background:var(--surface-card);color:var(--text-primary);box-shadow:var(--shadow-xs)' : 'color:var(--text-muted)'">📋 Fila</button>
+                    <button @click="omView = 'kanban'" class="px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all" :style="omView === 'kanban' ? 'background:var(--surface-card);color:var(--text-primary);box-shadow:var(--shadow-xs)' : 'color:var(--text-muted)'">🗂️ Kanban</button>
+                </div>
+            </div>
+
+            <div x-show="omView !== 'detail'" class="grid grid-cols-5 gap-2">
+                <template x-for="kpi in [
+                  { label:'Total', value: omTodayKpi.total, color:'var(--accent)' },
+                  { label:'Ativos', value: omTodayKpi.active, color:'#f59e0b' },
+                  { label:'Em preparo', value: omTodayKpi.preparing, color:'#8b5cf6' },
+                  { label:'A caminho', value: omTodayKpi.onTheWay, color:'#3b82f6' },
+                  { label:'Receita', value: formatMoney(omTodayKpi.revenue), color:'#22c55e' },
+                ]" :key="kpi.label">
+                    <div class="admin-card px-3 py-2.5 text-center">
+                        <p class="text-[9px] text-text-muted uppercase tracking-wider mb-1" x-text="kpi.label"></p>
+                        <p class="text-base font-display font-bold leading-none" :style="`color:${kpi.color}`" x-text="kpi.value"></p>
+                    </div>
+                </template>
+            </div>
+
+            <!-- QUEUE VIEW -->
+            <div x-show="omView === 'queue'" class="space-y-3">
+                <div class="flex flex-wrap gap-2">
+                    <input x-model="omSearch" placeholder="Buscar pedido, cliente…" class="form-input w-44 text-xs !py-2 !px-3 !rounded-xl flex-shrink-0"/>
+                    <button @click="omFilter = 'all'" class="px-3 py-2 rounded-xl text-[11px] font-semibold border transition-all whitespace-nowrap" :style="omFilter === 'all' ? 'background:var(--accent);color:white;border-color:var(--accent)' : 'border-color:var(--border);color:var(--text-muted);background:var(--surface-card)'">Todos</button>
+                    <template x-for="st in omStatuses" :key="st.id">
+                        <button @click="omFilter = st.id" class="px-3 py-2 rounded-xl text-[11px] font-semibold border transition-all whitespace-nowrap flex items-center gap-1" :style="omFilter === st.id ? `background:${st.color};color:white;border-color:${st.color}` : 'border-color:var(--border);color:var(--text-muted);background:var(--surface-card)'">
+                            <span x-text="st.emoji" class="text-xs leading-none"></span>
+                            <span x-text="st.short"></span>
+                        </button>
+                    </template>
+                </div>
+                <div x-show="omFilteredOrders.length === 0" class="admin-card flex flex-col items-center justify-center py-14 text-center">
+                    <div class="text-5xl mb-3 select-none">📭</div>
+                    <p class="text-sm font-bold text-text-primary mb-1">Nenhum pedido encontrado</p>
+                    <p class="text-xs text-text-muted">Tente outro filtro ou aguarde novos pedidos.</p>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <template x-for="order in omFilteredOrders" :key="order.uuid">
+                        <div class="admin-card hover:border-accent/30 cursor-pointer transition-all duration-200 p-0 overflow-hidden" style="padding:0" @click="omOpenDetail(order)">
+                            <div class="flex items-center gap-3 px-4 py-3 border-b border-border/60">
+                                <div class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="`background:${omStatusById(order.currentStatus ?? 'paid').color}`"></div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <span class="text-xs font-bold text-text-primary font-mono" x-text="'#' + order.orderNumber"></span>
+                                        <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full text-white" :style="`background:${omStatusById(order.currentStatus ?? 'paid').color}`" x-text="omStatusById(order.currentStatus ?? 'paid').emoji + ' ' + omStatusById(order.currentStatus ?? 'paid').short"></span>
+                                    </div>
+                                    <p class="text-[10px] text-text-muted truncate mt-0.5" x-text="order.name + ' · ' + ({pix:'PIX',card:'Cartão',cash:'Dinheiro'}[order.payment] ?? '')"></p>
+                                </div>
+                                <div class="text-right flex-shrink-0">
+                                    <p class="text-[11px] font-bold font-mono" :style="omElapsedColor(order)" x-text="omElapsedMinutes(order)"></p>
+                                    <p class="text-[9px] text-text-muted" x-text="order.deliveryType === 'pickup' ? '🏃 Retirada' : '🛵 Entrega'"></p>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-3 px-4 py-2.5">
+                                <p class="flex-1 text-xs text-text-muted truncate min-w-0" x-text="(order.items ?? []).map(i => i.qty + 'x ' + i.name).join(' · ')"></p>
+                                <div class="flex items-center gap-2 flex-shrink-0">
+                                    <span class="text-sm font-bold" style="color:var(--accent)" x-text="formatMoney(order.total)"></span>
+                                    <template x-if="omNextStatus(order)">
+                                        <button @click.stop="omAdvanceStatus(order)" class="px-2.5 py-1.5 rounded-xl text-[10px] font-bold text-white transition-all active:scale-95 whitespace-nowrap" :style="`background:${omStatusById(omNextStatus(order)).color}`" x-text="omStatusById(omNextStatus(order)).emoji + ' Avançar'"></button>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- KANBAN VIEW -->
+            <div x-show="omView === 'kanban'" class="overflow-x-auto pb-2 -mx-4 px-4 hide-scrollbar">
+                <div class="flex gap-3 items-start" style="min-width: max-content">
+                    <template x-for="col in omKanbanColumns" :key="col.id">
+                        <div class="w-52 flex flex-col gap-2 flex-shrink-0">
+                            <div class="flex items-center gap-2 px-3 py-2 rounded-xl font-semibold text-white text-xs" :style="`background:${col.color}`">
+                                <span x-text="col.emoji" class="text-sm leading-none select-none"></span>
+                                <span x-text="col.short" class="flex-1"></span>
+                                <span class="w-5 h-5 rounded-full bg-white/25 flex items-center justify-center text-[10px] font-bold" x-text="col.orders.length"></span>
+                            </div>
+                            <div class="space-y-2 min-h-[60px]">
+                                <template x-for="order in col.orders" :key="order.uuid">
+                                    <div class="admin-card p-3 cursor-pointer hover:border-accent/30 transition-all duration-200" @click="omOpenDetail(order)">
+                                        <div class="flex justify-between items-center mb-1">
+                                            <span class="text-[10px] font-bold font-mono text-text-primary" x-text="'#' + order.orderNumber"></span>
+                                            <span class="text-[10px] font-bold font-mono" :style="omElapsedColor(order)" x-text="omElapsedMinutes(order)"></span>
+                                        </div>
+                                        <p class="text-[10px] text-text-muted truncate mb-1.5" x-text="order.name"></p>
+                                        <div class="flex justify-between items-center">
+                                            <span class="text-[10px] text-text-muted" x-text="order.deliveryType === 'pickup' ? '🏃 Retirada' : '🛵 Entrega'"></span>
+                                            <span class="text-xs font-bold" style="color:var(--accent)" x-text="formatMoney(order.total)"></span>
+                                        </div>
+                                    </div>
+                                </template>
+                                <div x-show="col.orders.length === 0" class="text-[10px] text-text-muted/50 text-center py-5 border border-dashed border-border rounded-xl">Vazio</div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- DETAIL VIEW -->
+            <div x-show="omView === 'detail' && omSelectedOrder" class="space-y-4">
+                <div class="admin-card flex items-center gap-4 p-4" :style="`border-color:${omStatusById(omSelectedOrder?.currentStatus ?? 'paid').color}40;background:${omStatusById(omSelectedOrder?.currentStatus ?? 'paid').color}12`">
+                    <span class="text-4xl select-none flex-shrink-0" x-text="omStatusById(omSelectedOrder?.currentStatus ?? 'paid').emoji"></span>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-bold font-display" :style="`color:${omStatusById(omSelectedOrder?.currentStatus ?? 'paid').color}`" x-text="omStatusById(omSelectedOrder?.currentStatus ?? 'paid').label"></p>
+                        <p class="text-xs text-text-muted mt-0.5" x-text="omSelectedOrder ? omSelectedOrder.name + ' · ' + omElapsedMinutes(omSelectedOrder) : ''"></p>
+                    </div>
+                    <div class="text-right flex-shrink-0">
+                        <p class="text-lg font-bold font-display text-text-primary" x-text="formatMoney(omSelectedOrder?.total)"></p>
+                        <p class="text-xs text-text-muted" x-text="({pix:'PIX',card:'Cartão',cash:'Dinheiro'})[omSelectedOrder?.payment] ?? ''"></p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="space-y-4">
+                        <div class="admin-card p-0 overflow-hidden">
+                            <div class="px-4 py-3 border-b border-border flex items-center gap-2">
+                                <p class="text-xs font-bold text-text-primary flex-1">Atualizar Status</p>
+                                <template x-if="omSelectedOrder && omNextStatus(omSelectedOrder)">
+                                    <button @click="omAdvanceStatus(omSelectedOrder)" class="px-3 py-1.5 rounded-xl text-[10px] font-bold text-white transition-all active:scale-95 flex items-center gap-1" :style="`background:${omStatusById(omNextStatus(omSelectedOrder)).color}`">
+                                        <span x-text="omStatusById(omNextStatus(omSelectedOrder)).emoji"></span>
+                                        <span x-text="'→ ' + omStatusById(omNextStatus(omSelectedOrder)).label"></span>
+                                    </button>
+                                </template>
+                            </div>
+                            <div class="p-4 space-y-3">
+                                <div class="grid grid-cols-3 gap-2">
+                                    <template x-for="st in omStatuses" :key="st.id">
+                                        <button @click="omSetStatus(omSelectedOrder, st.id, omStatusNote)" :disabled="omSelectedOrder?.currentStatus === st.id" class="py-2.5 rounded-xl border text-[10px] font-semibold transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed flex flex-col items-center gap-1" :style="omSelectedOrder?.currentStatus === st.id ? `border-color:${st.color};color:${st.color};background:${st.color}15` : 'border-color:var(--border);color:var(--text-muted)'">
+                                            <span x-text="st.emoji" class="text-base leading-none select-none"></span>
+                                            <span x-text="st.short"></span>
+                                        </button>
+                                    </template>
+                                </div>
+                                <input x-model="omStatusNote" placeholder="Nota para o cliente (opcional)" class="form-input text-xs !py-2"/>
+                            </div>
+                        </div>
+
+                        <div class="admin-card p-0 overflow-hidden">
+                            <div class="px-4 py-3 border-b border-border flex items-center gap-2">
+                                <p class="text-xs font-bold text-text-primary flex-1">Itens do Pedido</p>
+                                <template x-if="!omEditMode && !['delivered','cancelled'].includes(omSelectedOrder?.currentStatus ?? '')">
+                                    <button @click="omStartEdit()" class="text-[10px] font-semibold px-3 py-1.5 rounded-xl border border-border text-text-muted hover:text-text-primary transition-all active:scale-95">✏️ Editar</button>
+                                </template>
+                                <template x-if="omEditMode">
+                                    <div class="flex gap-2">
+                                        <button @click="omCancelEdit()" class="text-[10px] font-semibold px-3 py-1.5 rounded-xl border border-border text-text-muted transition-all active:scale-95">Cancelar</button>
+                                        <button @click="omSaveEdit()" :disabled="omSaving" class="text-[10px] font-semibold px-3 py-1.5 rounded-xl text-white transition-all active:scale-95 disabled:opacity-50 btn-primary"><span x-text="omSaving ? 'Salvando…' : 'Salvar'"></span></button>
+                                    </div>
+                                </template>
+                            </div>
+                            <div x-show="!omEditMode" class="divide-y divide-border">
+                                <template x-for="item in (omSelectedOrder?.items ?? [])" :key="item.name + item.note">
+                                    <div class="flex items-start gap-2 px-4 py-3">
+                                        <span class="text-[10px] font-mono font-bold text-text-muted flex-shrink-0 mt-0.5" x-text="item.qty + 'x'"></span>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-xs font-medium text-text-primary" x-text="item.name"></p>
+                                            <p x-show="item.complements?.length" class="text-[10px] text-text-muted mt-0.5" x-text="(item.complements ?? []).map(c => c.optionName).join(', ')"></p>
+                                            <p x-show="item.note" class="text-[10px] text-text-muted italic mt-0.5" x-text="'📝 ' + item.note"></p>
+                                        </div>
+                                        <span class="text-xs font-bold text-text-primary flex-shrink-0" x-text="formatMoney(item.total)"></span>
+                                    </div>
+                                </template>
+                            </div>
+                            <div x-show="omEditMode && omDraft" class="divide-y divide-border">
+                                <template x-for="(item, idx) in (omDraft?.items ?? [])" :key="idx">
+                                    <div class="flex items-center gap-2 px-4 py-3">
+                                        <div class="flex items-center gap-1 flex-shrink-0">
+                                            <button @click="omDraftItemQty(idx, -1)" class="w-6 h-6 rounded-lg border border-border text-text-muted flex items-center justify-center font-bold text-sm hover:border-red-400 hover:text-red-400 transition-all active:scale-90">−</button>
+                                            <span class="text-xs font-bold text-text-primary w-5 text-center" x-text="item.qty"></span>
+                                            <button @click="omDraftItemQty(idx, +1)" class="w-6 h-6 rounded-lg border border-border text-text-muted flex items-center justify-center font-bold text-sm hover:text-accent transition-all active:scale-90">+</button>
+                                        </div>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-xs font-medium text-text-primary" x-text="item.name"></p>
+                                            <p x-show="item.complements?.length" class="text-[10px] text-text-muted" x-text="(item.complements ?? []).map(c => c.optionName).join(', ')"></p>
+                                        </div>
+                                        <span class="text-xs font-bold text-text-primary flex-shrink-0" x-text="formatMoney(item.total)"></span>
+                                        <button @click="omDraftRemoveItem(idx)" class="w-6 h-6 rounded-lg text-red-400 hover:bg-red-400/10 flex items-center justify-center transition-all active:scale-90 text-base flex-shrink-0">×</button>
+                                    </div>
+                                </template>
+                                <div class="px-4 py-3 grid grid-cols-2 gap-3" style="background:var(--surface)">
+                                    <div>
+                                        <p class="form-label mb-1">Desconto (R$)</p>
+                                        <input type="number" min="0" step="0.01" :value="omDraft?.manualDiscount ?? 0" @input="omDraftSetDiscount($event.target.value)" class="form-input text-xs !py-2 font-mono"/>
+                                    </div>
+                                    <div x-show="omDraft?.payment === 'cash'">
+                                        <p class="form-label mb-1">Troco para (R$)</p>
+                                        <input type="number" min="0" step="0.01" :value="omDraft?.changeFor ?? 0" @input="omDraftSetChangeFor($event.target.value)" class="form-input text-xs !py-2 font-mono"/>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="px-4 py-3 border-t border-border space-y-1.5" style="background:var(--surface)">
+                                <template x-if="!omEditMode">
+                                    <div class="space-y-1.5">
+                                        <div class="flex justify-between text-xs text-text-muted"><span>Subtotal</span><span x-text="formatMoney(omSelectedOrder?.subtotal)"></span></div>
+                                        <div x-show="(omSelectedOrder?.discount ?? 0) > 0" class="flex justify-between text-xs font-medium" style="color:#22c55e"><span>Desconto</span><span x-text="'- ' + formatMoney(omSelectedOrder?.discount)"></span></div>
+                                        <div x-show="omSelectedOrder?.deliveryType === 'delivery'" class="flex justify-between text-xs text-text-muted"><span>Entrega</span><span x-text="(omSelectedOrder?.deliveryFee ?? 0) === 0 ? 'Grátis' : formatMoney(omSelectedOrder?.deliveryFee)"></span></div>
+                                        <div class="flex justify-between text-sm font-bold pt-1.5 border-t border-border/50"><span class="text-text-primary">Total</span><span style="color:var(--accent)" x-text="formatMoney(omSelectedOrder?.total)"></span></div>
+                                        <div x-show="omSelectedOrder?.payment === 'cash' && (omSelectedOrder?.changeFor ?? 0) > 0" class="flex justify-between text-xs text-text-muted"><span>Troco para</span><span x-text="formatMoney(omSelectedOrder?.changeFor)"></span></div>
+                                    </div>
+                                </template>
+                                <template x-if="omEditMode && omDraft">
+                                    <div class="space-y-1.5">
+                                        <div class="flex justify-between text-xs text-text-muted"><span>Subtotal</span><span x-text="formatMoney(omDraft?.subtotal)"></span></div>
+                                        <div x-show="(omDraft?._totalDiscount ?? 0) > 0" class="flex justify-between text-xs font-medium" style="color:#22c55e"><span>Desconto total</span><span x-text="'- ' + formatMoney(omDraft?._totalDiscount)"></span></div>
+                                        <div x-show="omDraft?.deliveryType === 'delivery'" class="flex justify-between text-xs text-text-muted"><span>Entrega</span><span x-text="(omDraft?.deliveryFee ?? 0) === 0 ? 'Grátis' : formatMoney(omDraft?.deliveryFee)"></span></div>
+                                        <div class="flex justify-between text-sm font-bold pt-1.5 border-t border-border/50"><span class="text-text-primary">Total</span><span style="color:var(--accent)" x-text="formatMoney(omDraft?.total)"></span></div>
+                                        <div x-show="omDraft?.payment === 'cash' && (omDraft?.changeFor ?? 0) > 0" class="flex justify-between text-xs text-text-muted"><span>Troco para</span><span x-text="formatMoney(omDraft?.changeFor)"></span></div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div class="admin-card p-0 overflow-hidden">
+                            <div class="px-4 py-3 border-b border-border"><p class="text-xs font-bold text-text-primary">Cliente</p></div>
+                            <div class="p-4 space-y-2.5">
+                                <div class="flex items-center gap-2 text-xs"><span class="text-text-muted w-16 flex-shrink-0">Nome</span><span class="font-medium text-text-primary" x-text="omSelectedOrder?.name"></span></div>
+                                <div class="flex items-center gap-2 text-xs"><span class="text-text-muted w-16 flex-shrink-0">WhatsApp</span><a :href="`https://wa.me/${(omSelectedOrder?.phone ?? '').replace(/\D/g,'')}`" target="_blank" class="font-mono font-medium underline" style="color:#22c55e" x-text="omSelectedOrder?.phone"></a></div>
+                                <div x-show="omSelectedOrder?.deliveryType === 'delivery'" class="flex items-start gap-2 text-xs"><span class="text-text-muted w-16 flex-shrink-0">Endereço</span><span class="font-medium text-text-primary" x-text="omSelectedOrder?.address + (omSelectedOrder?.complement ? ', ' + omSelectedOrder?.complement : '')"></span></div>
+                                <div x-show="omSelectedOrder?.deliveryType === 'pickup'" class="flex items-center gap-2 text-xs"><span class="text-text-muted w-16 flex-shrink-0">Tipo</span><span class="font-medium text-text-primary">🏃 Retirada no local</span></div>
+                                <div x-show="omSelectedOrder?.coupon" class="flex items-center gap-2 text-xs"><span class="text-text-muted w-16 flex-shrink-0">Cupom</span><span class="font-mono font-bold" style="color:var(--accent)" x-text="omSelectedOrder?.coupon"></span></div>
+                            </div>
+                        </div>
+
+                        <div class="admin-card p-0 overflow-hidden">
+                            <div class="px-4 py-3 border-b border-border"><p class="text-xs font-bold text-text-primary">Histórico de eventos</p></div>
+                            <div class="p-4">
+                                <div x-show="(omSelectedOrder?.timeline ?? []).length > 0" class="relative">
+                                    <div class="absolute left-[11px] top-3 bottom-3 w-px" style="background:var(--border)"></div>
+                                    <div class="space-y-4">
+                                        <template x-for="(ev, idx) in (omSelectedOrder?.timeline ?? []).slice().reverse()" :key="ev.timestamp + idx">
+                                            <div class="flex gap-3 relative">
+                                                <div class="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 z-10 relative border-2 text-[11px] select-none" :style="idx === 0 ? 'border-color:var(--accent);background:var(--surface-card)' : 'border-color:var(--border);background:var(--surface)'" x-text="ev.emoji ?? '📦'"></div>
+                                                <div class="flex-1 min-w-0">
+                                                    <p class="text-xs font-semibold leading-tight" :class="idx === 0 ? 'text-text-primary' : 'text-text-muted'" x-text="ev.label"></p>
+                                                    <p x-show="ev.note" class="text-[10px] text-text-muted italic mt-0.5" x-text="ev.note"></p>
+                                                    <p class="text-[9px] text-text-muted/60 mt-1 font-mono" x-text="formatDatetime(ev.timestamp)"></p>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                                <p x-show="(omSelectedOrder?.timeline ?? []).length === 0" class="text-xs text-text-muted text-center py-4">Sem eventos ainda.</p>
+                            </div>
+                        </div>
+
+                        <div class="space-y-2">
+                            <button @click="omNotifyClient(omSelectedOrder)" class="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm text-white transition-all active:scale-95" style="background:#22c55e; box-shadow: 0 4px 14px rgba(34,197,94,0.35)">
+                                <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                                Notificar via WhatsApp
+                            </button>
+                            <div x-show="!['delivered','cancelled'].includes(omSelectedOrder?.currentStatus ?? '')">
+                                <div x-show="!omShowCancelConfirm">
+                                    <button @click="omShowCancelConfirm = true" class="w-full py-2.5 rounded-xl border border-red-400/40 text-red-400 text-xs font-semibold transition-all active:scale-95 hover:bg-red-400/5">❌ Cancelar pedido</button>
+                                </div>
+                                <div x-show="omShowCancelConfirm" class="rounded-2xl p-4 space-y-3 border border-red-400/30" style="background:rgba(239,68,68,0.05)">
+                                    <p class="text-xs font-bold text-red-400">Confirmar cancelamento</p>
+                                    <input x-model="omCancelReason" placeholder="Motivo do cancelamento (obrigatório)" class="form-input text-xs !py-2 !border-red-400/30 focus:!border-red-400 focus:!shadow-[0_0_0_3px_rgba(239,68,68,0.12)]"/>
+                                    <div class="flex gap-2">
+                                        <button @click="omShowCancelConfirm = false; omCancelReason = ''" class="flex-1 py-2.5 rounded-xl border border-border text-xs font-semibold text-text-muted transition-all active:scale-95" style="background:var(--surface-card)">Voltar</button>
+                                        <button @click="omCancelOrder(omSelectedOrder)" class="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-xs font-semibold transition-all active:scale-95" style="box-shadow:0 4px 14px rgba(239,68,68,0.35)">Confirmar</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /order-manager -->
+
+        <!-- ═══ ORDERS HISTORY TAB ═══ -->
+        <div x-show="adminTab==='orders'" class="space-y-4">
+            <div class="flex items-center justify-between">
+                <h2 class="admin-section-title">📋 Histórico de Pedidos</h2>
+                <button @click="clearOrderHistory()" class="text-xs text-red-400 hover:text-red-600">Limpar</button>
+            </div>
+            <div class="space-y-3">
+                <template x-for="order in orderHistory.slice().reverse()" :key="order.uuid||order.id">
+                    <div class="admin-card">
+                        <div class="flex justify-between items-start mb-2">
+                            <div>
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <p class="font-bold text-text-primary text-sm" x-text="order.name"></p>
+                                    <span x-show="order.orderNumber" class="text-[10px] font-mono bg-surface-muted text-text-muted px-1.5 py-0.5 rounded" x-text="'#'+order.orderNumber"></span>
+                                    <span x-show="order.hash" class="text-[10px] px-1.5 py-0.5 rounded font-bold" :class="verifyOrderHash(order) ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'">
+                                        <span x-show="verifyOrderHash(order)">✓ íntegro</span>
+                                        <span x-show="!verifyOrderHash(order)">⚠ adulterado</span>
+                                    </span>
+                                </div>
+                                <p class="text-xs text-text-muted" x-text="order.address"></p>
+                                <p class="text-xs text-text-muted font-mono" x-text="(order.date||'') + ' ' + (order.time||'')"></p>
+                            </div>
+                            <div class="text-right">
+                                <p class="font-bold text-accent" x-text="formatMoney(order.total)"></p>
+                                <span class="text-[10px] px-1.5 py-0.5 rounded-md font-medium" :class="{'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400': order.payment==='pix','bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400': order.payment==='card','bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400': order.payment==='cash'}">
+                                    <span x-show="order.payment==='pix'">🔑 PIX</span>
+                                    <span x-show="order.payment==='card'">💳 Cartão</span>
+                                    <span x-show="order.payment==='cash'">💵 Dinheiro</span>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap gap-1">
+                            <template x-for="item in order.items" :key="item.name">
+                                <span class="text-xs bg-surface-muted text-text-muted px-2 py-0.5 rounded-lg" x-text="item.qty+'x '+item.name"></span>
+                            </template>
+                        </div>
+                        <p x-show="order.uuid" class="text-[10px] font-mono text-text-muted mt-2 truncate" x-text="'UUID: '+order.uuid"></p>
+                    </div>
+                </template>
+                <div x-show="orderHistory.length===0" class="text-center py-10 text-text-muted text-sm">Nenhum pedido registrado.</div>
+            </div>
+        </div>
+
+        <!-- ═══ REPORTS TAB ═══ -->
+        <div x-show="adminTab==='reports'" class="space-y-5">
+            <h2 class="admin-section-title">📊 Relatórios & Fechamento</h2>
+            <div class="grid grid-cols-2 gap-3">
+                <div class="admin-card text-center"><div class="text-3xl font-display font-bold text-accent" x-text="todayStats.orders"></div><div class="text-xs text-text-muted mt-1">Pedidos Hoje</div></div>
+                <div class="admin-card text-center"><div class="text-lg font-display font-bold text-accent" x-text="formatMoney(todayStats.revenue)"></div><div class="text-xs text-text-muted mt-1">Faturamento Hoje</div></div>
+                <div class="admin-card text-center"><div class="text-lg font-display font-bold text-text-primary" x-text="formatMoney(todayStats.avgTicket)"></div><div class="text-xs text-text-muted mt-1">Ticket Médio</div></div>
+                <div class="admin-card text-center"><div class="text-lg font-display font-bold text-text-primary" x-text="formatMoney(allTimeStats.totalRevenue)"></div><div class="text-xs text-text-muted mt-1">Total Geral</div></div>
+            </div>
+            <div class="admin-card space-y-3">
+                <h3 class="font-display font-bold text-text-primary text-sm">💳 Por Pagamento</h3>
+                <template x-for="method in [{id:'pix',name:'PIX',icon:'🔑',color:'#22c55e'},{id:'card',name:'Cartão',icon:'💳',color:'#3b82f6'},{id:'cash',name:'Dinheiro',icon:'💵',color:'#f59e0b'}]" :key="method.id">
+                    <div class="flex items-center gap-3">
+                        <span class="text-lg w-7 flex-shrink-0" x-text="method.icon"></span>
+                        <div class="flex-1">
+                            <div class="flex justify-between text-sm mb-1"><span class="text-text-secondary" x-text="method.name"></span><span class="font-bold text-text-primary" x-text="formatMoney(todayStats.byPayment[method.id])"></span></div>
+                            <div class="h-2 bg-surface-muted rounded-full overflow-hidden"><div class="h-full rounded-full transition-all duration-500" :style="`width:${todayStats.revenue>0?(todayStats.byPayment[method.id]/todayStats.revenue*100):0}%;background:${method.color}`"></div></div>
+                        </div>
+                        <span class="text-xs text-text-muted w-10 text-right" x-text="todayStats.revenue>0?((todayStats.byPayment[method.id]/todayStats.revenue)*100).toFixed(0)+'%':'0%'"></span>
+                    </div>
+                </template>
+            </div>
+            <div class="admin-card border-2 border-accent/30" style="background:linear-gradient(135deg,rgba(var(--accent-rgb),.04) 0%,transparent 100%)">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" :style="'background:var(--accent-light)'">📊</div>
+                    <div><h3 class="font-display font-bold text-text-primary text-base">Fechamento Contábil</h3><p class="text-xs text-text-muted" x-text="todayStats.date+' • '+todayStats.orders+' pedido(s) • '+formatMoney(todayStats.revenue)"></p></div>
+                </div>
+                <button @click="closeDayReport()" class="w-full py-3 rounded-2xl font-display font-bold text-white text-sm mb-4 transition-all active:scale-[0.98]" :style="'background:var(--accent)'">🔒 Registrar Fechamento do Dia</button>
+                <p class="text-xs text-text-muted uppercase tracking-wider font-medium mb-3">Exportar Relatórios</p>
+                <div class="grid grid-cols-2 gap-2">
+                    <button @click="exportExcel()" class="export-btn flex flex-col items-center gap-2 p-4 rounded-2xl border-2 border-border bg-surface hover:border-green-400 hover:bg-green-50 dark:hover:bg-green-900/10 transition-all group"><span class="text-2xl group-hover:scale-110 transition-transform">📊</span><div class="text-center"><p class="text-xs font-bold text-text-primary">Excel</p><p class="text-[10px] text-text-muted">5 planilhas + auditoria</p></div></button>
+                    <button @click="exportCSV()" class="export-btn flex flex-col items-center gap-2 p-4 rounded-2xl border-2 border-border bg-surface hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all group"><span class="text-2xl group-hover:scale-110 transition-transform">📄</span><div class="text-center"><p class="text-xs font-bold text-text-primary">CSV</p><p class="text-[10px] text-text-muted">Com UUID + hash</p></div></button>
+                    <button @click="exportJSON()" class="export-btn flex flex-col items-center gap-2 p-4 rounded-2xl border-2 border-border bg-surface hover:border-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/10 transition-all group"><span class="text-2xl group-hover:scale-110 transition-transform">💾</span><div class="text-center"><p class="text-xs font-bold text-text-primary">JSON</p><p class="text-[10px] text-text-muted">Backup completo</p></div></button>
+                    <button @click="printReport()" class="export-btn flex flex-col items-center gap-2 p-4 rounded-2xl border-2 border-border bg-surface hover:border-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/10 transition-all group"><span class="text-2xl group-hover:scale-110 transition-transform">🖨️</span><div class="text-center"><p class="text-xs font-bold text-text-primary">Imprimir/PDF</p><p class="text-[10px] text-text-muted">Com integridade</p></div></button>
+                </div>
+                <div class="mt-3 bg-surface-muted rounded-xl p-3">
+                    <p class="text-[10px] text-text-muted leading-relaxed">💡 <strong>Excel</strong> inclui 5 planilhas: resumo contábil, pedidos com UUID/hash, itens detalhados, ranking de produtos e histórico geral. <strong>JSON</strong> contém snapshot financeiro completo. Todos os pedidos possuem <strong>UUID único</strong> e <strong>hash de integridade</strong> para rastreabilidade.</p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+

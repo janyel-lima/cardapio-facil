@@ -1,0 +1,26 @@
+<div x-show="showPixModal" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+    <div x-show="showPixModal" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="translate-y-full sm:scale-95 opacity-0" x-transition:enter-end="translate-y-0 sm:scale-100 opacity-100"
+         class="relative bg-surface-card w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden">
+        <div x-show="pixStatus==='confirmed'" class="p-10 text-center"><div class="text-6xl mb-4 animate-bounce">✅</div><h3 class="font-display font-bold text-text-primary text-2xl mb-2">Pagamento Confirmado!</h3><p class="text-text-muted text-sm">Seu pedido está sendo preparado 🍔</p></div>
+        <div x-show="pixStatus==='expired'" class="p-8 text-center"><div class="text-5xl mb-4">⏰</div><h3 class="font-display font-bold text-text-primary text-xl mb-2">QR Code Expirado</h3><p class="text-text-muted text-sm mb-4">O tempo limite expirou.</p><button @click="openPixModal()" class="btn-primary">Gerar Novo QR Code</button><button @click="showPixModal=false;showCart=true" class="w-full mt-2 py-2 text-sm text-text-muted">Voltar ao carrinho</button></div>
+        <div x-show="pixStatus==='pending'" class="p-6">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-xl flex items-center justify-center text-white text-lg font-bold" :style="'background:var(--accent)'">🔑</div>
+                <div><h3 class="font-display font-bold text-text-primary text-lg">Pague via PIX</h3><p class="text-xs text-text-muted">Escaneie o QR Code ou copie a chave</p></div>
+                <div class="ml-auto text-right"><div class="font-display font-bold text-2xl text-accent" x-text="formatMoney(orderTotal)"></div><div class="text-xs font-mono" :class="pixCountdown<60?'text-red-500':'text-text-muted'">Expira em <span x-text="pixCountdownFormatted"></span></div></div>
+            </div>
+            <div class="w-full h-1.5 bg-surface-muted rounded-full mb-4 overflow-hidden"><div class="h-full rounded-full transition-all duration-1000" :style="`width:${(pixCountdown/300)*100}%;background:var(--accent)`" :class="pixCountdown<60?'!bg-red-500':''"></div></div>
+            <div class="flex flex-col items-center mb-4"><div class="bg-white p-3 rounded-2xl shadow-sm border border-border inline-block"><img :src="pixQrUrl" alt="QR Code PIX" class="w-44 h-44 rounded-xl" loading="lazy"></div><p class="text-xs text-text-muted text-center mt-2">Aponte a câmera do celular para o código</p></div>
+            <div class="bg-surface-muted rounded-2xl p-4 mb-4"><p class="text-xs text-text-muted uppercase tracking-wider font-medium mb-2">Chave PIX</p><div class="flex items-center gap-3"><span class="font-mono text-sm text-text-primary flex-1 break-all" x-text="config.pixKey"></span><button @click="copyPixKey()" class="flex-shrink-0 px-3 py-2 rounded-xl font-medium text-sm transition-all" :class="pixCopied?'bg-green-500 text-white':''" :style="!pixCopied?'background:var(--accent);color:white':''"><span x-show="!pixCopied">📋 Copiar</span><span x-show="pixCopied">✓ Copiado!</span></button></div></div>
+            <div class="space-y-2 mb-4">
+                <div class="flex items-center gap-3 text-sm text-text-secondary"><span class="w-6 h-6 rounded-full bg-surface-muted flex items-center justify-center text-xs font-bold text-accent flex-shrink-0">1</span>Abra o app do banco e escolha <strong>Pagar com PIX</strong></div>
+                <div class="flex items-center gap-3 text-sm text-text-secondary"><span class="w-6 h-6 rounded-full bg-surface-muted flex items-center justify-center text-xs font-bold text-accent flex-shrink-0">2</span>Escaneie o QR Code ou cole a chave PIX</div>
+                <div class="flex items-center gap-3 text-sm text-text-secondary"><span class="w-6 h-6 rounded-full bg-surface-muted flex items-center justify-center text-xs font-bold text-accent flex-shrink-0">3</span>Confirme o valor de <strong x-text="formatMoney(orderTotal)"></strong> e pague</div>
+                <div class="flex items-center gap-3 text-sm text-text-secondary"><span class="w-6 h-6 rounded-full bg-surface-muted flex items-center justify-center text-xs font-bold text-accent flex-shrink-0">4</span>Clique em <strong>"Já Paguei"</strong> abaixo</div>
+            </div>
+            <button @click="confirmPixPayment()" class="w-full py-4 rounded-2xl font-display font-bold text-base text-white shadow-lg transition-all active:scale-[0.98]" :style="'background:var(--accent)'">✅ Já Paguei — Confirmar Pedido</button>
+            <button @click="showPixModal=false;showCart=true" class="w-full mt-2 py-2 text-sm text-text-muted hover:text-text-primary transition-colors">← Voltar ao carrinho</button>
+        </div>
+    </div>
+</div>

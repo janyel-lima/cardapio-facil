@@ -1,0 +1,135 @@
+<div x-show="showCart"
+     x-transition:enter="transition ease-out duration-300"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     class="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="showCart=false"></div>
+    <div x-show="showCart"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="translate-y-full sm:translate-y-0 sm:scale-95 opacity-0"
+         x-transition:enter-end="translate-y-0 sm:scale-100 opacity-100"
+         class="relative bg-surface-card w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col max-h-[92vh]">
+        <div class="flex justify-between items-center p-5 border-b border-border flex-shrink-0">
+            <div>
+                <h2 class="text-xl font-display font-bold text-text-primary">Seu Pedido</h2>
+                <p class="text-xs text-text-muted mt-0.5" x-show="cart.length > 0">
+                    <span x-text="cartTotalItems"></span> item(s) • <span x-text="formatMoney(cartSubtotal)"></span>
+                </p>
+            </div>
+            <button @click="showCart=false" class="icon-btn">✕</button>
+        </div>
+
+        <div class="overflow-y-auto flex-1 p-5 space-y-3">
+            <template x-for="(item, index) in cart" :key="index">
+                <div class="flex items-start gap-3 bg-surface-muted rounded-2xl p-3">
+                    <img :src="item.image" class="w-14 h-14 rounded-xl object-cover flex-shrink-0">
+                    <div class="flex-1 min-w-0">
+                        <p class="font-display font-bold text-text-primary text-sm leading-tight" x-text="item.name"></p>
+                        <template x-if="item.complements && item.complements.length > 0">
+                            <div class="mt-1 flex flex-wrap gap-1">
+                                <template x-for="comp in item.complements" :key="comp.optionId">
+                                    <span class="text-[10px] bg-accent/10 text-accent px-1.5 py-0.5 rounded-md font-medium">
+                                        <span x-text="comp.optionName"></span>
+                                        <span x-show="comp.price > 0" class="opacity-75"> +<span x-text="formatMoney(comp.price)"></span></span>
+                                    </span>
+                                </template>
+                            </div>
+                        </template>
+                        <p x-show="item.note" class="text-xs text-text-muted italic mt-1 truncate" x-text="'📝 ' + item.note"></p>
+                        <p class="text-accent font-bold text-sm mt-1"
+                           x-text="formatMoney(((item.promoPrice||item.price) + (item.complements||[]).reduce((s,c)=>s+c.price,0)) * item.qty)"></p>
+                    </div>
+                    <div class="flex items-center gap-2 flex-shrink-0">
+                        <button @click="decrementCart(index)" class="w-7 h-7 rounded-lg bg-surface-card border border-border flex items-center justify-center text-text-primary font-bold text-sm">−</button>
+                        <span x-text="item.qty" class="font-display font-bold text-text-primary w-5 text-center text-sm"></span>
+                        <button @click="incrementCart(index)" class="w-7 h-7 rounded-xl flex items-center justify-center text-white font-bold text-sm" :style="'background:var(--accent)'">+</button>
+                    </div>
+                </div>
+            </template>
+
+            <div x-show="cart.length === 0" class="flex flex-col items-center justify-center py-12 text-center">
+                <div class="text-5xl mb-3">🛒</div>
+                <h3 class="font-display font-bold text-text-primary mb-1">Carrinho vazio</h3>
+                <p class="text-sm text-text-muted">Adicione items do cardápio para começar</p>
+            </div>
+
+            <div x-show="cart.length > 0" class="space-y-3 pt-3">
+                <div class="border-t border-dashed border-border pt-4">
+                    <h3 class="font-display font-bold text-text-primary mb-3 text-sm uppercase tracking-wider">Dados de Entrega</h3>
+                    <div class="space-y-2.5">
+                        <input type="text" x-model="checkout.name" placeholder="Seu nome completo *" class="form-input w-full">
+                        <input type="tel" x-model="checkout.phone" placeholder="WhatsApp (11) 99999-9999 *" class="form-input w-full">
+                        <div class="grid grid-cols-2 gap-2">
+                            <button @click="checkout.deliveryType='delivery'"
+                                    :class="checkout.deliveryType==='delivery'?'border-accent bg-accent/10 text-accent':'border-border text-text-muted'"
+                                    class="py-2.5 rounded-xl border-2 font-medium text-sm transition-all">🛵 Delivery</button>
+                            <button @click="checkout.deliveryType='pickup'"
+                                    :class="checkout.deliveryType==='pickup'?'border-accent bg-accent/10 text-accent':'border-border text-text-muted'"
+                                    class="py-2.5 rounded-xl border-2 font-medium text-sm transition-all">🏃 Retirada</button>
+                        </div>
+                        <div x-show="checkout.deliveryType==='delivery'">
+                            <input type="text" x-model="checkout.address" placeholder="Rua, número, bairro *" class="form-input w-full mb-2">
+                            <input type="text" x-model="checkout.complement" placeholder="Complemento (apto, ref.)" class="form-input w-full">
+                        </div>
+                        <div>
+                            <p class="text-xs text-text-muted font-medium mb-2 uppercase tracking-wider">Forma de Pagamento</p>
+                            <div class="grid grid-cols-3 gap-2">
+                                <template x-for="method in paymentMethods" :key="method.id">
+                                    <button @click="checkout.payment=method.id"
+                                            :class="checkout.payment===method.id?'border-accent bg-accent/10':'border-border'"
+                                            class="flex flex-col items-center gap-1 py-2.5 rounded-xl border-2 transition-all">
+                                        <span class="text-xl" x-text="method.icon"></span>
+                                        <span class="text-[11px] font-medium" :class="checkout.payment===method.id?'text-accent':'text-text-muted'" x-text="method.name"></span>
+                                    </button>
+                                </template>
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <input type="text" x-model="couponInput" placeholder="Cupom de desconto" class="form-input flex-1 uppercase">
+                            <button @click="applyCoupon()" class="px-4 py-2.5 rounded-xl font-medium text-sm text-white" :style="'background:var(--accent)'">Aplicar</button>
+                        </div>
+                        <div x-show="appliedCoupon" class="flex items-center gap-2 bg-green-500/10 border border-green-500/20 rounded-xl p-3">
+                            <span class="text-green-500 font-bold text-sm">✓ Cupom "<span x-text="appliedCoupon?.code" class="uppercase"></span>" aplicado!</span>
+                            <button @click="appliedCoupon=null" class="ml-auto text-text-muted text-xs">Remover</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-surface-muted rounded-2xl p-4 space-y-2 text-sm">
+                    <div class="flex justify-between text-text-muted"><span>Subtotal</span><span x-text="formatMoney(cartSubtotal)"></span></div>
+                    <div x-show="discountValue > 0" class="flex justify-between text-green-500"><span>Desconto</span><span>-<span x-text="formatMoney(discountValue)"></span></span></div>
+                    <div class="flex justify-between text-text-muted" x-show="checkout.deliveryType==='delivery'">
+                        <span>Taxa de entrega</span>
+                        <span x-show="deliveryFee===0" class="text-green-500 font-medium">Grátis 🎉</span>
+                        <span x-show="deliveryFee>0" x-text="formatMoney(deliveryFee)"></span>
+                    </div>
+                    <div class="border-t border-border pt-2 flex justify-between font-display font-bold text-base text-text-primary">
+                        <span>Total</span><span class="text-accent" x-text="formatMoney(orderTotal)"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div x-show="cart.length > 0" class="p-5 border-t border-border flex-shrink-0">
+            <button @click="sendToWhatsApp()"
+                    class="w-full py-4 rounded-2xl text-white font-display font-bold text-base shadow-lg shadow-green-500/20 bg-green-500 hover:bg-green-600 flex items-center justify-center gap-2.5 transition-all active:scale-[0.98]">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z"/></svg>
+                Enviar Pedido via WhatsApp
+            </button>
+        </div>
+    </div>
+</div>
+
+<div x-show="cart.length > 0 && !showCart"
+     x-transition:enter="transition ease-out duration-300"
+     x-transition:enter-start="opacity-0 translate-y-4"
+     x-transition:enter-end="opacity-100 translate-y-0"
+     class="fixed bottom-6 left-1/2 -translate-x-1/2 z-30">
+    <button @click="showCart=true"
+            class="flex items-center gap-3 px-5 py-3.5 rounded-2xl text-white shadow-2xl transition-all active:scale-95 font-medium"
+            :style="'background:var(--accent)'">
+        <span class="bg-white/20 rounded-lg px-2 py-0.5 font-display font-bold text-sm" x-text="cartTotalItems"></span>
+        <span class="text-sm">Ver Pedido</span>
+        <span class="font-display font-bold text-sm" x-text="formatMoney(orderTotal)"></span>
+    </button>
+</div>
