@@ -134,10 +134,6 @@ const appAdmin = {
   },
 
   // ── Auditoria ──────────────────────────────────────────────────────────────
-  // NOTA: esta é a ÚNICA implementação de addAudit em toda a aplicação.
-  // Ela usa hash encadeado para garantir integridade imutável do log.
-  // database.js não define mais addAudit — qualquer chamada a this.addAudit()
-  // cai obrigatoriamente aqui.
   async addAudit(action, data = {}) {
     const BUSINESS_EVENTS = new Set([
       'ORDER_PLACED', 'ORDER_STATUS_CHANGED', 'ORDER_EDITED',
@@ -150,7 +146,6 @@ const appAdmin = {
     if (!BUSINESS_EVENTS.has(action)) return;
 
     try {
-      // FIX: guarda contra auditLog não inicializado como array
       if (!Array.isArray(this.auditLog)) {
         console.warn('[addAudit] auditLog não é array — entrada de auditoria não será encadeada.');
         return;
@@ -192,7 +187,6 @@ const appAdmin = {
     return expected === order.hash;
   },
 
-  // ── Helper: normaliza qualquer formato de data para dd/MM/yyyy ─────────────
   _normalizeOrderDate(order) {
     if (order.date && /^\d{2}\/\d{2}\/\d{4}$/.test(order.date)) return order.date;
     if (order.timestamp) {
@@ -253,18 +247,21 @@ const appAdmin = {
       const willBeActive = !cat.active;
       const catIdx       = this.categories.findIndex(c => c.id === cat.id);
       if (catIdx === -1) return;
-      this.categories[catIdx] = { ...this.categories[catIdx], active: willBeActive };
-      this.categories          = [...this.categories];
+
+      // FIX: splice em vez de reatribuição — preserva a referência do Proxy Alpine.
+      // this.categories = [...this.categories]  →  substitui a ref, quebra reatividade.
+      // splice(catIdx, 1, novoItem)  →  muta in-place, ref permanece a mesma.
+      this.categories.splice(catIdx, 1, { ...this.categories[catIdx], active: willBeActive });
 
       let affectedCount = 0;
-      this.items = this.items.map(item => {
-        if (item.category !== cat.id) return item;
+      this.items.forEach((item, i) => {
+        if (item.category !== cat.id) return;
         affectedCount++;
         if (!willBeActive) {
-          return { ...item, _wasAvailable: item.available, available: false };
+          this.items.splice(i, 1, { ...item, _wasAvailable: item.available, available: false });
         } else {
-          const { _wasAvailable, ...rest } = { ...item };
-          return { ...rest, available: _wasAvailable !== undefined ? _wasAvailable : true };
+          const { _wasAvailable, ...rest } = item;
+          this.items.splice(i, 1, { ...rest, available: _wasAvailable !== undefined ? _wasAvailable : true });
         }
       });
 
@@ -355,7 +352,6 @@ const appAdmin = {
     if (!this.editingProduct.price || this.editingProduct.price <= 0) { this.showToast('Preço inválido', 'error', '⚠️'); return; }
 
     try {
-      // Se promoId vinculado, calcula promoPrice automaticamente
       if (this.editingProduct.promoId) {
         const linkedPromo = this.promotions.find(p => p.id === this.editingProduct.promoId);
         if (linkedPromo && linkedPromo.active &&
@@ -368,7 +364,6 @@ const appAdmin = {
               +Math.max(0, this.editingProduct.price - linkedPromo.value).toFixed(2);
           }
         } else {
-          // promoção não encontrada ou inativa — desvincula
           this.editingProduct.promoId    = null;
           this.editingProduct.promoPrice = null;
         }
@@ -477,9 +472,13 @@ const appAdmin = {
       const affectedItems = this.items.filter(i => i.promoId === promo.id);
 
       if (affectedItems.length > 0) {
-        this.items = this.items.map(i =>
-          i.promoId === promo.id ? { ...i, promoId: null, promoPrice: null } : i,
-        );
+        // FIX: this.items.map() retornava um array novo — substituição de ref.
+        // forEach + splice muta in-place, preservando a referência.
+        this.items.forEach((item, i) => {
+          if (item.promoId === promo.id) {
+            this.items.splice(i, 1, { ...item, promoId: null, promoPrice: null });
+          }
+        });
         await this.saveItems();
       }
 
@@ -509,23 +508,29 @@ const appAdmin = {
 
   async togglePromo(promo) {
     try {
-      const idx        = this.promotions.findIndex(p => p.id === promo.id);
+      const idx = this.promotions.findIndex(p => p.id === promo.id);
       if (idx === -1) return;
       const willBeActive = !promo.active;
-      this.promotions[idx] = { ...this.promotions[idx], active: willBeActive };
-      this.promotions      = [...this.promotions];
+
+      // FIX: splice em vez de reatribuição.
+      // this.promotions[idx] = {...}; this.promotions = [...this.promotions]
+      // → substituía a ref inteira, invalidando o tracking Alpine.
+      // splice(idx, 1, novoItem) → muta in-place, ref permanece a mesma.
+      this.promotions.splice(idx, 1, { ...this.promotions[idx], active: willBeActive });
 
       const linked = this.items.filter(i => i.promoId === promo.id);
       if (linked.length > 0) {
-        this.items = this.items.map(i => {
-          if (i.promoId !== promo.id) return i;
+        // FIX: idem — this.items.map() retorna array novo.
+        // forEach + splice muta in-place.
+        this.items.forEach((item, i) => {
+          if (item.promoId !== promo.id) return;
           if (!willBeActive) {
-            return { ...i, promoPrice: null };
+            this.items.splice(i, 1, { ...item, promoPrice: null });
           } else {
             let pp = null;
-            if (promo.type === 'percentage') pp = +(i.price * (1 - promo.value / 100)).toFixed(2);
-            else if (promo.type === 'fixed')  pp = +Math.max(0, i.price - promo.value).toFixed(2);
-            return { ...i, promoPrice: pp };
+            if (promo.type === 'percentage') pp = +(item.price * (1 - promo.value / 100)).toFixed(2);
+            else if (promo.type === 'fixed')  pp = +Math.max(0, item.price - promo.value).toFixed(2);
+            this.items.splice(i, 1, { ...item, promoPrice: pp });
           }
         });
         await this.saveItems();
@@ -549,7 +554,6 @@ const appAdmin = {
     }
   },
 
-  // Promoções elegíveis para vínculo com itens (scope:'item' ou percentage/fixed sem scope)
   get itemScopePromos() {
     return this.promotions.filter(p =>
       p.active &&
@@ -615,11 +619,7 @@ const appAdmin = {
       this.showClearHistoryConfirm   = false;
       this.clearHistoryPassword      = '';
       this.clearHistoryPasswordError = '';
-
-      // FIX CRÍTICO: NÃO usar this.orderHistory = [] — quebra o proxy reativo do Alpine.
-      // Sempre muta o array existente via splice para preservar a referência.
       this.orderHistory.splice(0);
-
       await db.orders.clear();
       await this.addAudit('HISTORY_CLEARED', {});
       this.showToast('Histórico apagado com sucesso', 'success', '🗑️');
@@ -719,13 +719,6 @@ const appAdmin = {
     }
   },
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // EXPORTAÇÕES
-  //   Excel  → fechamento contábil completo, 7 planilhas, uso interno
-  //   CSV    → importação BI/planilha externa, uma linha por pedido (dia atual)
-  //   JSON   → backup completo, integração sistemas, snapshot financeiro
-  // ════════════════════════════════════════════════════════════════════════════
-
   async exportExcel() {
     if (typeof XLSX === 'undefined') { this.showToast('Biblioteca XLSX não carregada', 'error', '❌'); return; }
     try {
@@ -737,13 +730,11 @@ const appAdmin = {
       const promoTypeLabel = { percentage: '% desconto', fixed: 'R$ desconto', freeDelivery: 'Frete grátis', coupon: 'Cupom' };
       const payLabel       = { pix: 'PIX', card: 'Cartão', cash: 'Dinheiro' };
 
-      /* ── agregados contábeis do dia ── */
       const dayGross    = today.rawOrders.reduce((s, o) => s + n(o.originalSubtotal || o.subtotal), 0);
       const dayItemDisc = today.rawOrders.reduce((s, o) => s + n(o.itemDiscounts), 0);
       const dayCartDisc = today.rawOrders.reduce((s, o) => s + n(o.discount), 0);
       const dayDelivery = today.rawOrders.reduce((s, o) => s + n(o.deliveryFee), 0);
 
-      /* ══ Planilha 1: Resumo Contábil ══ */
       const ws1 = XLSX.utils.aoa_to_sheet([
         ['RELATÓRIO CONTÁBIL — FECHAMENTO DO DIA', ''],
         ['', ''],
@@ -777,7 +768,6 @@ const appAdmin = {
       ]);
       XLSX.utils.book_append_sheet(wb, ws1, 'Resumo Contábil');
 
-      /* ══ Planilha 2: Pedidos do Dia ══ */
       const ws2 = XLSX.utils.aoa_to_sheet([
         ['UUID', 'Nº Pedido', 'Data', 'Hora', 'Cliente', 'Tel', 'Pagamento', 'Tipo',
           'Bruto (orig.)', 'Desc. Item', 'Desc. Carrinho', 'Entrega', 'Total Líquido',
@@ -789,61 +779,38 @@ const appAdmin = {
             o.uuid || '-', o.orderNumber || '-', o.date || '-', o.time || '-',
             o.name || '-', o.phone || '-',
             payLabel[o.payment] || o.payment || '-', o.deliveryType || '-',
-            n(o.originalSubtotal || o.subtotal),
-            n(o.itemDiscounts),
-            n(o.discount),
-            n(o.deliveryFee),
-            n(o.total),
-            o.coupon || '—',
-            promoNames || '—',
+            n(o.originalSubtotal || o.subtotal), n(o.itemDiscounts), n(o.discount),
+            n(o.deliveryFee), n(o.total), o.coupon || '—', promoNames || '—',
             o.hash || '-', integrity,
           ];
         }),
       ]);
       XLSX.utils.book_append_sheet(wb, ws2, 'Pedidos do Dia');
 
-      /* ══ Planilha 3: Itens Detalhados ══ */
       const itemRows3 = [];
       today.rawOrders.forEach(o => {
         (o.items || []).forEach(item => {
           itemRows3.push([
-            o.orderNumber || '-',
-            o.uuid || '-',
-            o.date || '-',
-            o.name || '-',
-            item.name || '-',
-            item.qty  || 0,
-            n(item.originalPrice || item.unitPrice),
-            n(item.unitPrice),
+            o.orderNumber || '-', o.uuid || '-', o.date || '-', o.name || '-',
+            item.name || '-', item.qty || 0,
+            n(item.originalPrice || item.unitPrice), n(item.unitPrice),
             n(item.itemDiscountAmount),
-            item.itemPromoType
-              ? (item.itemPromoType === 'percentage'
-                ? item.itemPromoValue + '%'
-                : 'R$ ' + item.itemPromoValue)
-              : '—',
-            item.itemPromoId   || '—',
-            item.itemPromoName || '—',
+            item.itemPromoType ? (item.itemPromoType === 'percentage' ? item.itemPromoValue + '%' : 'R$ ' + item.itemPromoValue) : '—',
+            item.itemPromoId || '—', item.itemPromoName || '—',
             promoTypeLabel[item.itemPromoType] || '—',
-            n(item.complementsTotal),
-            n(item.total),
-            item.note || '',
-            o.orderNumber || '-',
+            n(item.complementsTotal), n(item.total), item.note || '', o.orderNumber || '-',
           ]);
         });
       });
       const ws3 = XLSX.utils.aoa_to_sheet([
-        ['Nº Pedido', 'UUID Pedido', 'Data', 'Cliente',
-          'Item', 'Qtd',
-          'Preço Original (tabela)', 'Preço c/ Promo Item',
-          'Desc. Item (total)', 'Percentual/Fixo Desc.',
-          'ID Promoção Item', 'Nome Promoção Item', 'Tipo Promoção Item',
-          'Complementos', 'Total Item', 'Obs.',
-          'Ref. Pedido → Aba Pedidos'],
+        ['Nº Pedido', 'UUID Pedido', 'Data', 'Cliente', 'Item', 'Qtd',
+          'Preço Original (tabela)', 'Preço c/ Promo Item', 'Desc. Item (total)',
+          'Percentual/Fixo Desc.', 'ID Promoção Item', 'Nome Promoção Item', 'Tipo Promoção Item',
+          'Complementos', 'Total Item', 'Obs.', 'Ref. Pedido → Aba Pedidos'],
         ...itemRows3,
       ]);
       XLSX.utils.book_append_sheet(wb, ws3, 'Itens Detalhados');
 
-      /* ══ Planilha 4: Ranking Produtos ══ */
       const ws4 = XLSX.utils.aoa_to_sheet([
         ['#', 'Produto', 'Qtd Vendida', 'Faturamento (líquido)', '% Receita'],
         ...today.topProducts.map((p, i) => [
@@ -853,53 +820,38 @@ const appAdmin = {
       ]);
       XLSX.utils.book_append_sheet(wb, ws4, 'Ranking Produtos');
 
-      /* ══ Planilha 5: Histórico Geral ══ */
       const ws5 = XLSX.utils.aoa_to_sheet([
         ['UUID', 'Nº Pedido', 'Data', 'Hora', 'Cliente', 'Pagamento',
           'Bruto (orig.)', 'Desc. Item', 'Desc. Carrinho', 'Entrega', 'Total', 'Cupom'],
         ...allOrds.map(o => [
           o.uuid || '-', o.orderNumber || '-', this._normalizeOrderDate(o), o.time || '-',
           o.name || '-', payLabel[o.payment] || o.payment || '-',
-          n(o.originalSubtotal || o.subtotal),
-          n(o.itemDiscounts),
-          n(o.discount),
-          n(o.deliveryFee),
-          n(o.total),
-          o.coupon || '—',
+          n(o.originalSubtotal || o.subtotal), n(o.itemDiscounts), n(o.discount),
+          n(o.deliveryFee), n(o.total), o.coupon || '—',
         ]),
       ]);
       XLSX.utils.book_append_sheet(wb, ws5, 'Histórico Geral');
 
-      /* ══ Planilha 6: Promoções — Catálogo + Uso ══ */
       const promoUsage = {};
       allOrds.forEach(o => {
         (o.items || []).forEach(item => {
           if (!item.itemPromoId) return;
           const key = String(item.itemPromoId);
-          if (!promoUsage[key]) promoUsage[key] = {
-            name: item.itemPromoName || key, scope: 'item',
-            uses: 0, ordersSet: new Set(), totalDiscount: 0,
-          };
+          if (!promoUsage[key]) promoUsage[key] = { name: item.itemPromoName || key, scope: 'item', uses: 0, ordersSet: new Set(), totalDiscount: 0 };
           promoUsage[key].uses++;
           promoUsage[key].ordersSet.add(o.orderNumber);
           promoUsage[key].totalDiscount += n(item.itemDiscountAmount);
         });
         (o.appliedPromos || []).forEach(p => {
           const key = String(p.id);
-          if (!promoUsage[key]) promoUsage[key] = {
-            name: p.name || key, scope: 'cart',
-            uses: 0, ordersSet: new Set(), totalDiscount: 0,
-          };
+          if (!promoUsage[key]) promoUsage[key] = { name: p.name || key, scope: 'cart', uses: 0, ordersSet: new Set(), totalDiscount: 0 };
           promoUsage[key].uses++;
           promoUsage[key].ordersSet.add(o.orderNumber);
           promoUsage[key].totalDiscount += n(p.discountAmount);
         });
         if (o.coupon) {
           const key = 'CUP_' + o.coupon;
-          if (!promoUsage[key]) promoUsage[key] = {
-            name: 'Cupom: ' + o.coupon, scope: 'coupon',
-            uses: 0, ordersSet: new Set(), totalDiscount: 0,
-          };
+          if (!promoUsage[key]) promoUsage[key] = { name: 'Cupom: ' + o.coupon, scope: 'coupon', uses: 0, ordersSet: new Set(), totalDiscount: 0 };
           promoUsage[key].uses++;
           promoUsage[key].ordersSet.add(o.orderNumber);
           promoUsage[key].totalDiscount += n(o.couponDetail?.discountAmount || o.discount);
@@ -909,78 +861,34 @@ const appAdmin = {
       const promoRows = (this.promotions || []).map(p => {
         const usageKey  = String(p.id);
         const couponKey = p.type === 'coupon' ? 'CUP_' + p.code : null;
-        const u         = promoUsage[usageKey] || (couponKey ? promoUsage[couponKey] : null)
-                        || { uses: 0, ordersSet: new Set(), totalDiscount: 0 };
-        const valueStr  = p.type === 'percentage' ? p.value + '%'
-          : p.type === 'fixed'        ? 'R$ ' + p.value
-          : p.type === 'freeDelivery' ? 'Frete grátis'
-          : p.type === 'coupon'       ? p.code + ' (' + p.value + (p.type === 'percentage' ? '%)' : ' R$)')
-          : '-';
-        const linkedProducts = (this.items || [])
-          .filter(i => i.promoId === p.id)
-          .map(i => i.name)
-          .join('; ') || '—';
-        return [
-          p.id, p.name, promoTypeLabel[p.type] || p.type, p.scope || 'cart',
-          valueStr, p.minOrder || 0, p.expiresAt || '—',
-          p.active ? 'Ativa' : 'Inativa',
-          linkedProducts,
-          u.uses, u.ordersSet.size, u.totalDiscount,
-        ];
+        const u         = promoUsage[usageKey] || (couponKey ? promoUsage[couponKey] : null) || { uses: 0, ordersSet: new Set(), totalDiscount: 0 };
+        const valueStr  = p.type === 'percentage' ? p.value + '%' : p.type === 'fixed' ? 'R$ ' + p.value : p.type === 'freeDelivery' ? 'Frete grátis' : p.type === 'coupon' ? p.code + ' (' + p.value + (p.type === 'percentage' ? '%)' : ' R$)') : '-';
+        const linkedProducts = (this.items || []).filter(i => i.promoId === p.id).map(i => i.name).join('; ') || '—';
+        return [p.id, p.name, promoTypeLabel[p.type] || p.type, p.scope || 'cart', valueStr, p.minOrder || 0, p.expiresAt || '—', p.active ? 'Ativa' : 'Inativa', linkedProducts, u.uses, u.ordersSet.size, u.totalDiscount];
       });
       const ws6 = XLSX.utils.aoa_to_sheet([
-        ['ID', 'Nome', 'Tipo', 'Escopo', 'Benefício', 'Pedido Mínimo', 'Expira em', 'Status',
-          'Produtos Vinculados',
-          'Usos (itens/pedidos)', 'Pedidos Únicos', 'Desconto Total Gerado'],
+        ['ID', 'Nome', 'Tipo', 'Escopo', 'Benefício', 'Pedido Mínimo', 'Expira em', 'Status', 'Produtos Vinculados', 'Usos (itens/pedidos)', 'Pedidos Únicos', 'Desconto Total Gerado'],
         ...promoRows,
       ]);
       XLSX.utils.book_append_sheet(wb, ws6, 'Promoções');
 
-      /* ══ Planilha 7: Catálogo de Produtos c/ Promoções ══ */
       const catalogRows = (this.items || []).map(item => {
         const cat         = this.categories.find(c => c.id === item.category);
-        const linkedPromo = item.promoId
-          ? (this.promotions || []).find(p => p.id === item.promoId)
-          : null;
-        const discountPct = linkedPromo && item.promoPrice
-          ? (((item.price - item.promoPrice) / item.price) * 100).toFixed(1) + '%'
-          : '—';
-        return [
-          item.id, item.name,
-          cat ? `${cat.icon} ${cat.name}` : item.category,
-          item.price,
-          item.promoPrice || '—',
-          discountPct,
-          item.promoId    || '—',
-          linkedPromo?.name || '—',
-          linkedPromo?.type ? promoTypeLabel[linkedPromo.type] : '—',
-          item.available ? 'Disponível' : 'Indisponível',
-          item.featured  ? 'Sim'        : 'Não',
-        ];
+        const linkedPromo = item.promoId ? (this.promotions || []).find(p => p.id === item.promoId) : null;
+        const discountPct = linkedPromo && item.promoPrice ? (((item.price - item.promoPrice) / item.price) * 100).toFixed(1) + '%' : '—';
+        return [item.id, item.name, cat ? `${cat.icon} ${cat.name}` : item.category, item.price, item.promoPrice || '—', discountPct, item.promoId || '—', linkedPromo?.name || '—', linkedPromo?.type ? promoTypeLabel[linkedPromo.type] : '—', item.available ? 'Disponível' : 'Indisponível', item.featured ? 'Sim' : 'Não'];
       });
       const ws7 = XLSX.utils.aoa_to_sheet([
-        ['ID Produto', 'Nome', 'Categoria', 'Preço Tabela', 'Preço c/ Promo',
-          '% Desconto', 'ID Promoção Vinculada', 'Nome Promoção', 'Tipo Promoção',
-          'Disponibilidade', 'Destaque'],
+        ['ID Produto', 'Nome', 'Categoria', 'Preço Tabela', 'Preço c/ Promo', '% Desconto', 'ID Promoção Vinculada', 'Nome Promoção', 'Tipo Promoção', 'Disponibilidade', 'Destaque'],
         ...catalogRows,
       ]);
       XLSX.utils.book_append_sheet(wb, ws7, 'Catálogo Produtos');
 
       XLSX.writeFile(wb, `fechamento_${today.date.replace(/\//g, '-')}.xlsx`);
-      await this.addAudit('EXPORT_EXCEL', {
-        date:         today.date,
-        orders:       today.orders,
-        revenue:      today.revenue,
-        itemDiscounts: dayItemDisc,
-        cartDiscounts: dayCartDisc,
-        sheets:        7,
-      });
+      await this.addAudit('EXPORT_EXCEL', { date: today.date, orders: today.orders, revenue: today.revenue, itemDiscounts: dayItemDisc, cartDiscounts: dayCartDisc, sheets: 7 });
       this.showToast('Excel exportado! (7 planilhas)', 'success', '📊');
     } catch (e) {
-      await this.logError(e.message || String(e), {
-        stack: e.stack || null, source: 'exportExcel', type: 'exportError',
-        orders: this.todayStats?.orders || 0,
-      }, 'admin');
+      await this.logError(e.message || String(e), { stack: e.stack || null, source: 'exportExcel', type: 'exportError', orders: this.todayStats?.orders || 0 }, 'admin');
       this.showToast('Erro ao exportar Excel.', 'error', '❌');
     }
   },
@@ -990,48 +898,17 @@ const appAdmin = {
       const today = this.todayStats;
       const n     = v => (typeof v === 'number' ? v : 0);
       const q     = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-
-      const header = [
-        'uuid', 'orderNumber', 'date', 'time', 'customer', 'phone', 'payment', 'deliveryType',
-        'originalSubtotal', 'itemDiscountsTotal', 'cartDiscount', 'totalDiscounts',
-        'deliveryFee', 'netTotal',
-        'couponCode', 'couponDiscount', 'cartPromoNames',
-        'hasItemPromo', 'itemPromoNames',
-        'itemCount', 'integrity',
-      ].map(q);
-
+      const header = ['uuid','orderNumber','date','time','customer','phone','payment','deliveryType','originalSubtotal','itemDiscountsTotal','cartDiscount','totalDiscounts','deliveryFee','netTotal','couponCode','couponDiscount','cartPromoNames','hasItemPromo','itemPromoNames','itemCount','integrity'].map(q);
       const rows = today.rawOrders.map(o => {
         const cartPromoNames = (o.appliedPromos || []).map(p => p.name).join('; ');
         const couponDiscount = o.couponDetail?.discountAmount ?? 0;
-        const itemPromoSet   = new Set(
-          (o.items || []).filter(i => i.itemPromoName).map(i => i.itemPromoName),
-        );
+        const itemPromoSet   = new Set((o.items || []).filter(i => i.itemPromoName).map(i => i.itemPromoName));
         const itemPromoNames = [...itemPromoSet].join('; ');
         const hasItemPromo   = itemPromoSet.size > 0;
         const totalDiscounts = n(o.itemDiscounts) + n(o.discount);
         const integrity      = this.verifyOrderHash(o) ? 'ok' : 'ADULTERADO';
-
-        return [
-          q(o.uuid || ''), q(o.orderNumber || ''), q(o.date || ''), q(o.time || ''),
-          q(o.name || ''), q(o.phone || ''),
-          q({ pix: 'PIX', card: 'Cartão', cash: 'Dinheiro' }[o.payment] || o.payment || ''),
-          q(o.deliveryType || ''),
-          n(o.originalSubtotal || o.subtotal),
-          n(o.itemDiscounts),
-          n(o.discount),
-          totalDiscounts,
-          n(o.deliveryFee),
-          n(o.total),
-          q(o.coupon || ''),
-          couponDiscount,
-          q(cartPromoNames),
-          q(hasItemPromo ? 'sim' : 'não'),
-          q(itemPromoNames),
-          (o.items || []).length,
-          q(integrity),
-        ].join(',');
+        return [q(o.uuid||''),q(o.orderNumber||''),q(o.date||''),q(o.time||''),q(o.name||''),q(o.phone||''),q({pix:'PIX',card:'Cartão',cash:'Dinheiro'}[o.payment]||o.payment||''),q(o.deliveryType||''),n(o.originalSubtotal||o.subtotal),n(o.itemDiscounts),n(o.discount),totalDiscounts,n(o.deliveryFee),n(o.total),q(o.coupon||''),couponDiscount,q(cartPromoNames),q(hasItemPromo?'sim':'não'),q(itemPromoNames),(o.items||[]).length,q(integrity)].join(',');
       });
-
       const csv = [header.join(','), ...rows].join('\n');
       const a   = document.createElement('a');
       a.href    = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }));
@@ -1040,9 +917,7 @@ const appAdmin = {
       await this.addAudit('EXPORT_CSV', { date: today.date, orders: today.orders });
       this.showToast('CSV exportado!', 'success', '📄');
     } catch (e) {
-      await this.logError(e.message || String(e), {
-        stack: e.stack || null, source: 'exportCSV', type: 'exportError',
-      }, 'admin');
+      await this.logError(e.message || String(e), { stack: e.stack || null, source: 'exportCSV', type: 'exportError' }, 'admin');
       this.showToast('Erro ao exportar CSV.', 'error', '❌');
     }
   },
@@ -1052,138 +927,51 @@ const appAdmin = {
       const today   = this.todayStats;
       const allOrds = this.orderHistory || [];
       const n       = v => (typeof v === 'number' ? v : 0);
-
       const promoAnalytics = {};
-
       allOrds.forEach(o => {
         (o.items || []).forEach(item => {
           if (!item.itemPromoId) return;
           const k = String(item.itemPromoId);
-          if (!promoAnalytics[k]) promoAnalytics[k] = {
-            promoId: item.itemPromoId, promoName: item.itemPromoName,
-            promoType: item.itemPromoType, promoValue: item.itemPromoValue,
-            scope: 'item', totalItemUses: 0, affectedOrders: new Set(),
-            totalDiscount: 0, affectedItems: [],
-          };
+          if (!promoAnalytics[k]) promoAnalytics[k] = { promoId: item.itemPromoId, promoName: item.itemPromoName, promoType: item.itemPromoType, promoValue: item.itemPromoValue, scope: 'item', totalItemUses: 0, affectedOrders: new Set(), totalDiscount: 0, affectedItems: [] };
           promoAnalytics[k].totalItemUses++;
           promoAnalytics[k].affectedOrders.add(o.orderNumber);
           promoAnalytics[k].totalDiscount += n(item.itemDiscountAmount);
-          if (!promoAnalytics[k].affectedItems.includes(item.name))
-            promoAnalytics[k].affectedItems.push(item.name);
+          if (!promoAnalytics[k].affectedItems.includes(item.name)) promoAnalytics[k].affectedItems.push(item.name);
         });
-
         (o.appliedPromos || []).forEach(p => {
           const k = String(p.id);
-          if (!promoAnalytics[k]) promoAnalytics[k] = {
-            promoId: p.id, promoName: p.name, promoType: p.type, promoValue: p.value,
-            scope: 'cart', totalItemUses: 0, affectedOrders: new Set(),
-            totalDiscount: 0, affectedItems: [],
-          };
+          if (!promoAnalytics[k]) promoAnalytics[k] = { promoId: p.id, promoName: p.name, promoType: p.type, promoValue: p.value, scope: 'cart', totalItemUses: 0, affectedOrders: new Set(), totalDiscount: 0, affectedItems: [] };
           promoAnalytics[k].totalItemUses++;
           promoAnalytics[k].affectedOrders.add(o.orderNumber);
           promoAnalytics[k].totalDiscount += n(p.discountAmount);
         });
-
         if (o.coupon && o.couponDetail) {
           const k = 'coupon_' + o.coupon;
-          if (!promoAnalytics[k]) promoAnalytics[k] = {
-            promoId: k, promoName: 'Cupom: ' + o.coupon, couponCode: o.coupon,
-            promoType: o.couponDetail.type, promoValue: o.couponDetail.value,
-            scope: 'coupon', totalItemUses: 0, affectedOrders: new Set(),
-            totalDiscount: 0, affectedItems: [],
-          };
+          if (!promoAnalytics[k]) promoAnalytics[k] = { promoId: k, promoName: 'Cupom: ' + o.coupon, couponCode: o.coupon, promoType: o.couponDetail.type, promoValue: o.couponDetail.value, scope: 'coupon', totalItemUses: 0, affectedOrders: new Set(), totalDiscount: 0, affectedItems: [] };
           promoAnalytics[k].totalItemUses++;
           promoAnalytics[k].affectedOrders.add(o.orderNumber);
           promoAnalytics[k].totalDiscount += n(o.couponDetail.discountAmount);
         }
       });
-
-      Object.values(promoAnalytics).forEach(pa => {
-        pa.affectedOrders = [...pa.affectedOrders];
-      });
-
+      Object.values(promoAnalytics).forEach(pa => { pa.affectedOrders = [...pa.affectedOrders]; });
       const payload = {
-        _meta: {
-          exportedAt:  new Date().toISOString(),
-          exportedBy:  'Cardápio Digital Pro',
-          version:     '3.0',
-          description: 'Backup completo com rastreabilidade de promoções por item E por carrinho.',
-          schemaGuide: {
-            itemDiscounts:    'Descontos de promoções vinculadas diretamente ao produto (scope:item)',
-            cartDiscounts:    'Descontos de carrinho: promos automáticas (scope:cart) + cupons',
-            originalSubtotal: 'Preço de tabela × qty + complementos, sem nenhum desconto',
-            subtotal:         'Após descontos de item = originalSubtotal − itemDiscounts',
-            total:            'subtotal − cartDiscounts + deliveryFee',
-          },
-        },
-        todaySummary: {
-          date:             today.date,
-          orders:           today.orders,
-          originalSubtotal: today.rawOrders.reduce((s, o) => s + n(o.originalSubtotal || o.subtotal), 0),
-          itemDiscounts:    today.rawOrders.reduce((s, o) => s + n(o.itemDiscounts), 0),
-          cartDiscounts:    today.rawOrders.reduce((s, o) => s + n(o.discount), 0),
-          totalDiscounts:   today.rawOrders.reduce((s, o) => s + n(o.itemDiscounts) + n(o.discount), 0),
-          deliveryRevenue:  today.rawOrders.reduce((s, o) => s + n(o.deliveryFee), 0),
-          netRevenue:       today.revenue,
-          avgTicket:        today.avgTicket,
-          byPayment:        today.byPayment,
-        },
-        allTimeSummary: {
-          totalOrders:    allOrds.length,
-          totalGross:     allOrds.reduce((s, o) => s + n(o.originalSubtotal || o.subtotal), 0),
-          totalItemDisc:  allOrds.reduce((s, o) => s + n(o.itemDiscounts), 0),
-          totalCartDisc:  allOrds.reduce((s, o) => s + n(o.discount), 0),
-          totalDiscounts: allOrds.reduce((s, o) => s + n(o.itemDiscounts) + n(o.discount), 0),
-          totalDelivery:  allOrds.reduce((s, o) => s + n(o.deliveryFee), 0),
-          totalNet:       allOrds.reduce((s, o) => s + n(o.total), 0),
-        },
+        _meta: { exportedAt: new Date().toISOString(), exportedBy: 'Cardápio Digital Pro', version: '3.0' },
+        todaySummary: { date: today.date, orders: today.orders, originalSubtotal: today.rawOrders.reduce((s,o)=>s+n(o.originalSubtotal||o.subtotal),0), itemDiscounts: today.rawOrders.reduce((s,o)=>s+n(o.itemDiscounts),0), cartDiscounts: today.rawOrders.reduce((s,o)=>s+n(o.discount),0), totalDiscounts: today.rawOrders.reduce((s,o)=>s+n(o.itemDiscounts)+n(o.discount),0), deliveryRevenue: today.rawOrders.reduce((s,o)=>s+n(o.deliveryFee),0), netRevenue: today.revenue, avgTicket: today.avgTicket, byPayment: today.byPayment },
+        allTimeSummary: { totalOrders: allOrds.length, totalGross: allOrds.reduce((s,o)=>s+n(o.originalSubtotal||o.subtotal),0), totalItemDisc: allOrds.reduce((s,o)=>s+n(o.itemDiscounts),0), totalCartDisc: allOrds.reduce((s,o)=>s+n(o.discount),0), totalDiscounts: allOrds.reduce((s,o)=>s+n(o.itemDiscounts)+n(o.discount),0), totalDelivery: allOrds.reduce((s,o)=>s+n(o.deliveryFee),0), totalNet: allOrds.reduce((s,o)=>s+n(o.total),0) },
         todayOrders: today.rawOrders,
-        allOrders:   allOrds,
-        promotionsCatalog: (this.promotions || []).map(p => ({
-          id: p.id, name: p.name, type: p.type, scope: p.scope || 'cart',
-          value: p.value, code: p.code || null, minOrder: p.minOrder || 0,
-          expiresAt: p.expiresAt || null, active: p.active,
-          linkedItems: (this.items || [])
-            .filter(i => i.promoId === p.id)
-            .map(i => ({
-              id: i.id, name: i.name, price: i.price, promoPrice: i.promoPrice,
-              discountPct: i.promoPrice
-                ? (((i.price - i.promoPrice) / i.price) * 100).toFixed(1) + '%' : null,
-            })),
-        })),
+        allOrders: allOrds,
+        promotionsCatalog: (this.promotions||[]).map(p=>({id:p.id,name:p.name,type:p.type,scope:p.scope||'cart',value:p.value,code:p.code||null,minOrder:p.minOrder||0,expiresAt:p.expiresAt||null,active:p.active,linkedItems:(this.items||[]).filter(i=>i.promoId===p.id).map(i=>({id:i.id,name:i.name,price:i.price,promoPrice:i.promoPrice,discountPct:i.promoPrice?(((i.price-i.promoPrice)/i.price)*100).toFixed(1)+'%':null}))})),
         promoAnalytics: Object.values(promoAnalytics),
-        itemsCatalog: (this.items || []).map(i => {
-          const linkedPromo = i.promoId ? (this.promotions || []).find(p => p.id === i.promoId) : null;
-          const cat         = this.categories.find(c => c.id === i.category);
-          return {
-            id: i.id, name: i.name, price: i.price,
-            promoPrice:  i.promoPrice  || null,
-            promoId:     i.promoId     || null,
-            promoName:   linkedPromo?.name  || null,
-            promoType:   linkedPromo?.type  || null,
-            promoValue:  linkedPromo?.value ?? null,
-            discountPct: (i.promoPrice && i.price)
-              ? (((i.price - i.promoPrice) / i.price) * 100).toFixed(1) + '%' : null,
-            category:     i.category,
-            categoryName: cat ? `${cat.icon} ${cat.name}` : i.category,
-            available:    i.available,
-            featured:     i.featured || false,
-          };
-        }),
+        itemsCatalog: (this.items||[]).map(i=>{const lp=i.promoId?(this.promotions||[]).find(p=>p.id===i.promoId):null;const cat=this.categories.find(c=>c.id===i.category);return{id:i.id,name:i.name,price:i.price,promoPrice:i.promoPrice||null,promoId:i.promoId||null,promoName:lp?.name||null,promoType:lp?.type||null,promoValue:lp?.value??null,discountPct:(i.promoPrice&&i.price)?(((i.price-i.promoPrice)/i.price)*100).toFixed(1)+'%':null,category:i.category,categoryName:cat?`${cat.icon} ${cat.name}`:i.category,available:i.available,featured:i.featured||false};}),
       };
-
-      const a   = document.createElement('a');
-      a.href    = URL.createObjectURL(
-        new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }),
-      );
+      const a = document.createElement('a');
+      a.href  = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
       a.download = `backup_${today.date.replace(/\//g, '-')}.json`;
       a.click();
       await this.addAudit('EXPORT_JSON', { date: today.date, totalOrders: allOrds.length });
       this.showToast('JSON exportado!', 'success', '💾');
     } catch (e) {
-      await this.logError(e.message || String(e), {
-        stack: e.stack || null, source: 'exportJSON', type: 'exportError',
-      }, 'admin');
+      await this.logError(e.message || String(e), { stack: e.stack || null, source: 'exportJSON', type: 'exportError' }, 'admin');
       this.showToast('Erro ao exportar JSON.', 'error', '❌');
     }
   },
@@ -1193,50 +981,26 @@ const appAdmin = {
       const today  = this.todayStats;
       const style  = getComputedStyle(document.documentElement);
       const accent = style.getPropertyValue('--accent').trim() || '#e85d04';
-
-      const html = buildReportHTML({
-        today,
-        allTime:      this.allTimeStats,
-        orderHistory: this.orderHistory || [],
-        promotions:   this.promotions   || [],
-        config:       this.config,
-        accent,
-        fmt:        v  => this.formatMoney(v),
-        verifyHash: o  => this.verifyOrderHash(o),
-      });
-
+      const html = buildReportHTML({ today, allTime: this.allTimeStats, orderHistory: this.orderHistory || [], promotions: this.promotions || [], config: this.config, accent, fmt: v => this.formatMoney(v), verifyHash: o => this.verifyOrderHash(o) });
       const w = window.open('', '_blank', 'width=900,height=700');
       if (!w) { this.showToast('Permita pop-ups para imprimir', 'error', '⚠️'); return; }
       w.document.open();
       w.document.write(html);
       w.document.close();
-
       await this.addAudit('EXPORT_PRINT', { date: today.date });
     } catch (e) {
-      await this.logError(e.message || String(e), {
-        stack: e.stack || null, source: 'printReport', type: 'exportError',
-      }, 'admin');
+      await this.logError(e.message || String(e), { stack: e.stack || null, source: 'printReport', type: 'exportError' }, 'admin');
       this.showToast('Erro ao gerar relatório para impressão.', 'error', '❌');
     }
   },
 
   async closeDayReport() {
-    if (this.todayStats.orders === 0) {
-      this.showToast('Nenhum pedido hoje para fechar', 'error', '⚠️');
-      return;
-    }
+    if (this.todayStats.orders === 0) { this.showToast('Nenhum pedido hoje para fechar', 'error', '⚠️'); return; }
     try {
-      await this.addAudit('DAY_CLOSED', {
-        date:    this.todayStats.date,
-        orders:  this.todayStats.orders,
-        revenue: this.todayStats.revenue,
-      });
+      await this.addAudit('DAY_CLOSED', { date: this.todayStats.date, orders: this.todayStats.orders, revenue: this.todayStats.revenue });
       this.showToast('Dia fechado com sucesso!', 'success', '🎊');
     } catch (e) {
-      await this.logError(e.message || String(e), {
-        stack: e.stack || null, source: 'closeDayReport', type: 'adminWriteError',
-        date: this.todayStats?.date || null,
-      }, 'admin');
+      await this.logError(e.message || String(e), { stack: e.stack || null, source: 'closeDayReport', type: 'adminWriteError', date: this.todayStats?.date || null }, 'admin');
       this.showToast('Erro ao registrar fechamento.', 'error', '❌');
     }
   },

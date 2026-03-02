@@ -26,8 +26,6 @@ const appDatabase = {
     try {
       await db.config.clear();
       await db.config.add({ ...this.config, _row: 1 });
-      // addAudit está definido em admin.js e é o único owner do log de auditoria.
-      // CONFIG_SAVED está no conjunto BUSINESS_EVENTS, então será registrado corretamente.
       await this.addAudit('CONFIG_SAVED', {
         restaurantName: this.config.restaurantName,
         isOpen:         this.config.isOpen,
@@ -102,8 +100,6 @@ const appDatabase = {
     }
   },
 
-  // FIX: transação única garante atomicidade — evita contador inconsistente
-  // entre o clear() e o add() se a operação for interrompida.
   async saveOrderCounter() {
     try {
       await db.transaction('rw', db.orderCounter, async () => {
@@ -126,10 +122,8 @@ const appDatabase = {
         stack: e.stack || null, source: 'persistOrder', type: 'dbWriteError',
         orderUuid: order?.uuid || null, orderNumber: order?.orderNumber || null,
       }, 'database');
-      throw e; // propaga para o caller tratar
+      throw e;
     }
-    // FIX: nunca reatribuir this.orderHistory = [] — isso quebra o proxy reativo
-    // do Alpine. Sempre muta o array existente via splice / push.
     if (!Array.isArray(this.orderHistory)) {
       console.error(
         '[persistOrder] ERRO: this.orderHistory não é array.\n' +
@@ -145,12 +139,6 @@ const appDatabase = {
     }
   },
 
-  // NOTA: addAudit foi REMOVIDO deste módulo intencionalmente.
-  // A única implementação válida é a de admin.js, que usa hash encadeado
-  // (similar a blockchain) para garantir integridade do log de auditoria.
-  // Manter duas implementações causava conflito de merge no Alpine e
-  // sobrescrevia a lógica de integridade com uma versão simplificada.
-
   async loadAllData() {
     try {
       const [cfgRows, cats, its, promos, orders, counterRow, auditRows] = await Promise.all([
@@ -164,18 +152,17 @@ const appDatabase = {
       ]);
 
       if (cfgRows.length) {
-        // Merge config sem sobrescrever campos em memória não presentes no DB
         const { _row, id, ...savedCfg } = cfgRows[0];
         this.config = { ...this.config, ...savedCfg };
       }
 
-      if (cats.length)   this.categories  = cats;
-      if (its.length)    this.items        = its;
-      if (promos.length) this.promotions   = promos;
+      // FIX: splice em vez de reatribuição — preserva a referência do Proxy Alpine.
+      // this.categories = cats  →  substitui a ref, $watch e getters perdem o tracking.
+      // splice(0, Infinity, ...cats)  →  muta in-place, ref permanece a mesma.
+      if (cats.length)   this.categories.splice(0, Infinity, ...cats);
+      if (its.length)    this.items.splice(0, Infinity, ...its);
+      if (promos.length) this.promotions.splice(0, Infinity, ...promos);
 
-      // FIX CRÍTICO: orderHistory DEVE existir como [] no estado inicial do Alpine.
-      // Nunca usar this.orderHistory = [] — quebra o proxy reativo.
-      // Sempre muta via splice para preservar a referência do array.
       if (!Array.isArray(this.orderHistory)) {
         console.error(
           '[loadAllData] ERRO: this.orderHistory não existe ou não é array.\n' +
@@ -193,24 +180,18 @@ const appDatabase = {
         this.orderCounter = counterRow[0].counter || 0;
       }
 
-      // FIX: mesma proteção para auditLog — muta em vez de reatribuir.
       if (!Array.isArray(this.auditLog)) {
         console.warn('[loadAllData] auditLog não é array — inicializando.');
-        // Não podemos reatribuir, mas podemos tentar. Se não funcionar, 
-        // o log simplesmente começa vazio nesta sessão.
       } else if (auditRows.length) {
         this.auditLog.splice(0, this.auditLog.length, ...auditRows);
       }
 
       this.dbReady = true;
 
-      // Carrega logs do sistema e drena fila de erros pré-Alpine
       await this.loadLogs();
 
     } catch (e) {
       console.error('[loadAllData] Dexie load error:', e);
-      // logError não está disponível ainda se o próprio loadAllData falhou
-      // antes de loadLogs() — usamos console como fallback seguro aqui.
       try {
         await this.logError(e.message || String(e), {
           stack: e.stack || null, source: 'loadAllData', type: 'dbInitError',

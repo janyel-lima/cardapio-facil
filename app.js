@@ -27,10 +27,49 @@ function menuApp() {
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appAdmin));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appTracking));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appOrderManager));
-    
-  // 2. Método de Inicialização (chamado via x-init="init()")
+    Object.defineProperties(component, Object.getOwnPropertyDescriptors(appProductCard));
+    Object.defineProperties(component, Object.getOwnPropertyDescriptors(appPromoFilter));
+  
+    // 2. Método de Inicialização (chamado via x-init="init()")
   component.init = async function () {
     try {
+
+        
+const _t = () => new Date().toISOString().slice(11, 23);
+
+// Espera um tick para o Alpine ter inicializado o proxy
+this.$nextTick(() => {
+
+    // Pega o objeto reativo subjacente (raw) via Alpine
+    // Em Alpine 3, this.$data retorna o objeto proxy
+    // Vamos interceptar no próprio `this` do componente
+    let _promoValue = this.promotions;
+
+    Object.defineProperty(this, 'promotions', {
+        configurable: true,
+        enumerable: true,
+        get() {
+            return _promoValue;
+        },
+        set(val) {
+            console.log(
+                `%c[promotions SET] length=${val?.length}  @${_t()}`,
+                'color:#f44;font-weight:bold'
+            );
+            console.trace(); // ← stack trace REAL aqui
+            _promoValue = val;
+        }
+    });
+
+    console.log('%c[DEBUG] setter trap instalado', 'color:#0f0', _t());
+
+    // dbReady watcher separado
+    this.$watch('dbReady', val => {
+        console.log(`%c[dbReady] → ${val}  @${_t()}`, 'color:#0af;font-weight:bold');
+        console.trace();
+    });
+});
+
       this._loadSecurityState();
       this.darkMode = this.loadSetting('darkMode', false);
       document.documentElement.classList.toggle('dark', this.darkMode);

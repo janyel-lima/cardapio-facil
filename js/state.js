@@ -9,6 +9,8 @@ const appState = {
   SECURITY_MAX_ATTEMPTS: 5,
   SECURITY_LOCKOUT_MS:   15 * 60 * 1000,
   SECURITY_SESSION_MS:    4 * 60 * 60 * 1000,
+  selectedPromoFilter: null,
+  viewMode : 'grid',
 
   pixStatus: 'pending', pixCopied: false, pixCountdown: 300, _pixTimer: null,
   selectedProduct: null, modalQty: 1, modalNote: '', modalSelectedComplements: {},
@@ -23,8 +25,8 @@ const appState = {
   { id: 'categories',    name: 'Categorias',           icon: '🏷️' },
   { id: 'products',      name: 'Produtos',             icon: '🛍️' },
   { id: 'promos',        name: 'Promoções',            icon: '🔥' },
-  { id: 'order-manager', name: 'Gestor de Pedidos',    icon: '⚙️' },
-  { id: 'orders',        name: 'Histórico de Pedidos', icon: '📋' },
+  { id: 'order-manager', name: 'Gestor Pedidos',    icon: '⚙️' },
+  { id: 'orders',        name: 'Histórico Pedidos', icon: '📋' },
   { id: 'reports',       name: 'Relatórios',           icon: '📊' },
   { id: 'syslogs',       name: 'Sys Logs',             icon: '🪲' }, // ← NOVO
 ],
