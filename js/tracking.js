@@ -1,31 +1,28 @@
 /* ═══════════════════════════════════════════════════════════
    CARDÁPIO DIGITAL PRO — js/tracking.js
    Módulo de acompanhamento de pedido
-   Injeta via Object.defineProperties em menuApp()
 ════════════════════════════════════════════════════════════ */
 
 const appTracking = {
 
   /* ── State ─────────────────────────────────────────────── */
-  showOrderTracking: false,
-  trackingOrder:     null,   // objeto completo do pedido selecionado
+  showOrderTracking:   false,
+  trackingOrder:       null,
   trackingOrderNumber: '',
-  trackingError:     '',
-  trackingRefreshing: false,
-  trackingStatusNote: '',    // nota opcional do admin ao mudar status
+  trackingError:       '',
+  trackingRefreshing:  false,
+  trackingStatusNote:  '',
 
   /* ── Definição dos status ───────────────────────────────── */
-  // Map id → { label, emoji } — acessível de qualquer template
   trackingStatusMap: {
-    paid:              { id: 'paid',              label: 'Pago',                   short: 'Pago',      emoji: '✅' },
-    preparing:         { id: 'preparing',         label: 'Em Preparação',          short: 'Preparo',   emoji: '👨‍🍳' },
-    out_for_delivery:  { id: 'out_for_delivery',  label: 'Saiu para Entrega',      short: 'A caminho', emoji: '🛵' },
-    ready_for_pickup:  { id: 'ready_for_pickup',  label: 'Pronto para Retirada',   short: 'Pronto',    emoji: '🏃' },
-    delivered:         { id: 'delivered',         label: 'Entregue',               short: 'Entregue',  emoji: '🎉' },
-    cancelled:         { id: 'cancelled',         label: 'Cancelado',              short: 'Cancelado', emoji: '❌' },
+    paid:             { id: 'paid',             label: 'Pago',                  short: 'Pago',      emoji: '✅' },
+    preparing:        { id: 'preparing',        label: 'Em Preparação',         short: 'Preparo',   emoji: '👨‍🍳' },
+    out_for_delivery: { id: 'out_for_delivery', label: 'Saiu para Entrega',     short: 'A caminho', emoji: '🛵' },
+    ready_for_pickup: { id: 'ready_for_pickup', label: 'Pronto para Retirada',  short: 'Pronto',    emoji: '🏃' },
+    delivered:        { id: 'delivered',        label: 'Entregue',              short: 'Entregue',  emoji: '🎉' },
+    cancelled:        { id: 'cancelled',        label: 'Cancelado',             short: 'Cancelado', emoji: '❌' },
   },
 
-  // Lista ordenada usada nos botões admin
   get trackingStatuses() {
     return [
       this.trackingStatusMap.paid,
@@ -57,9 +54,7 @@ const appTracking = {
 
   /* ── Verifica se um status já foi atingido ─────────────── */
   isStatusReached(stepId, currentStatus) {
-    const order = [
-      'paid', 'preparing', 'out_for_delivery', 'ready_for_pickup', 'delivered',
-    ];
+    const order            = ['paid', 'preparing', 'out_for_delivery', 'ready_for_pickup', 'delivered'];
     const cancelledReached = currentStatus === 'cancelled';
     if (cancelledReached) return stepId === 'cancelled';
     return order.indexOf(stepId) <= order.indexOf(currentStatus);
@@ -72,8 +67,10 @@ const appTracking = {
       preparing:        'Nossa cozinha está preparando tudo com carinho. 🍳',
       out_for_delivery: 'Seu pedido está a caminho! Fique de olho. 🛵',
       ready_for_pickup: 'Seu pedido está pronto! Pode vir buscar. 🏃',
-      delivered:        deliveryType === 'pickup' ? 'Pedido retirado. Bom apetite! 🎉' : 'Pedido entregue. Bom apetite! 🎉',
-      cancelled:        'Este pedido foi cancelado. Entre em contato para mais informações.',
+      delivered:        deliveryType === 'pickup'
+        ? 'Pedido retirado. Bom apetite! 🎉'
+        : 'Pedido entregue. Bom apetite! 🎉',
+      cancelled: 'Este pedido foi cancelado. Entre em contato para mais informações.',
     };
     return map[status] ?? '';
   },
@@ -89,7 +86,6 @@ const appTracking = {
   /* ── Fechar painel ──────────────────────────────────────── */
   closeTracking() {
     this.showOrderTracking = false;
-    // pequeno delay para não estragar a animação de saída
     setTimeout(() => {
       this.trackingOrder       = null;
       this.trackingError       = '';
@@ -103,7 +99,7 @@ const appTracking = {
     if (!num) { this.trackingError = 'Digite o número do pedido.'; return; }
 
     const found = this.orderHistory.find(
-      o => o.orderNumber === num || o.orderNumber === num.replace(/^#/, '')
+      o => o.orderNumber === num || o.orderNumber === num.replace(/^#/, ''),
     );
     if (!found) {
       this.trackingError = `Pedido "${num}" não encontrado.`;
@@ -129,48 +125,58 @@ const appTracking = {
   /* ── Admin: muda status e registra na timeline ──────────── */
   async updateOrderStatus(order, newStatus) {
     if (!order) return;
-
     const statusInfo = this.trackingStatusMap[newStatus];
     if (!statusInfo) return;
 
-    // Adiciona evento na timeline
-    const event = {
-      status:    newStatus,
-      label:     statusInfo.label,
-      emoji:     statusInfo.emoji,
-      note:      this.trackingStatusNote.trim(),
-      timestamp: new Date().toISOString(),
-      updatedBy: 'admin',
-    };
-
-    if (!order.timeline) order.timeline = [];
-    order.timeline.push(event);
-    order.currentStatus = newStatus;
-    order.updatedAt     = event.timestamp;
-
-    // Persiste no Dexie
     try {
-      await db.orders.put({ ...order });
+      // FIX: trabalha em cópia profunda para não mutar o objeto proxy do Alpine.
+      // A mutação direta do argumento `order` causava que a view de rastreamento
+      // pudesse ficar dessincronizada ou lançar erros de proxy não-extensível.
+      const updated = JSON.parse(JSON.stringify(order));
+
+      if (!updated.timeline) updated.timeline = [];
+      const event = {
+        status:    newStatus,
+        label:     statusInfo.label,
+        emoji:     statusInfo.emoji,
+        note:      this.trackingStatusNote.trim(),
+        timestamp: new Date().toISOString(),
+        updatedBy: 'admin',
+      };
+      updated.timeline.push(event);
+      updated.currentStatus = newStatus;
+      updated.updatedAt     = event.timestamp;
+
+      // Persiste no Dexie
+      await db.orders.put({ ...updated });
+
+      // Sincroniza em orderHistory via splice (preserva reatividade)
+      const idx = this.orderHistory.findIndex(o => o.uuid === updated.uuid);
+      if (idx !== -1) {
+        this.orderHistory.splice(idx, 1, { ...updated });
+      }
+
+      // Atualiza a view de rastreamento do cliente
+      this.trackingOrder     = { ...updated };
+      this.trackingStatusNote = '';
+
+      // FIX: sincroniza também com o Gestor de Pedidos (order-manager.js)
+      // caso o detalhe do mesmo pedido esteja aberto em outra aba do admin.
+      if (this.omSelectedOrder?.uuid === updated.uuid) {
+        this.omSelectedOrder = { ...updated };
+      }
+
+      await this.addAudit('ORDER_STATUS_CHANGED', {
+        orderNumber: updated.orderNumber,
+        newStatus,
+        label: statusInfo.label,
+      });
+
+      this.showToast(`Status: ${statusInfo.label} ${statusInfo.emoji}`, 'success', statusInfo.emoji);
     } catch (e) {
-      console.error('Erro ao salvar status:', e);
+      console.error('[updateOrderStatus] Erro:', e);
+      this.showToast('Erro ao atualizar status do pedido.', 'error', '❌');
     }
-
-    // Sincroniza em orderHistory
-    const idx = this.orderHistory.findIndex(o => o.uuid === order.uuid);
-    if (idx !== -1) this.orderHistory.splice(idx, 1, { ...order });
-
-    // Atualiza a view
-    this.trackingOrder     = { ...order };
-    this.trackingStatusNote = '';
-
-    // Auditoria
-    await this.addAudit('ORDER_STATUS_CHANGED', {
-      orderNumber: order.orderNumber,
-      newStatus,
-      label: statusInfo.label,
-    });
-
-    this.showToast(`Status: ${statusInfo.label} ${statusInfo.emoji}`, 'success', statusInfo.emoji);
   },
 
   /* ── Botão "Falar com a loja" ───────────────────────────── */

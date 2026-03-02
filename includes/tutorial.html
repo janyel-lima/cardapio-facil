@@ -1,0 +1,996 @@
+
+    <div x-show="showAdminLogin && !isAdmin" x-transition:enter="transition ease-out duration-200"
+        x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+        class="fixed inset-0 z-50 flex items-center justify-center px-4">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="showAdminLogin=false"></div>
+        <div class="relative bg-surface-card rounded-3xl shadow-2xl p-6 w-full max-w-sm"
+            x-transition:enter="transition ease-out duration-200" x-transition:enter-start="scale-95 opacity-0"
+            x-transition:enter-end="scale-100 opacity-100">
+            <h3 class="font-display font-bold text-text-primary text-xl mb-1">🔒 Área Admin</h3>
+            <p class="text-sm text-text-muted mb-5">Acesso restrito ao proprietário</p>
+
+            <div x-show="isLockedOut" class="lockout-banner rounded-xl p-3 mb-4">
+                <div class="flex items-center gap-2">
+                    <span class="text-xl">🔐</span>
+                    <div>
+                        <p class="text-sm font-bold text-red-600 dark:text-red-400">Conta bloqueada</p>
+                        <p class="text-xs text-red-500">Aguarde <span x-text="lockoutRemainingFormatted"
+                                class="font-mono font-bold"></span> para tentar novamente</p>
+                    </div>
+                </div>
+            </div>
+
+            <div x-show="failedAttempts > 0 && !isLockedOut"
+                class="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 mb-4">
+                <p class="text-xs text-yellow-600 dark:text-yellow-400">⚠️ <span
+                        x-text="SECURITY_MAX_ATTEMPTS - failedAttempts"></span> tentativa(s) restante(s) antes do
+                    bloqueio</p>
+            </div>
+
+            <input type="password" x-model="adminPassword" placeholder="Senha de acesso" @keyup.enter="loginAdmin()"
+                :disabled="isLockedOut" class="form-input w-full mb-3"
+                :class="isLockedOut?'opacity-50 cursor-not-allowed':''">
+            <p x-show="adminError" class="text-red-500 text-xs mb-3" x-text="adminError"></p>
+            <button @click="loginAdmin()" :disabled="isLockedOut"
+                class="w-full py-3 rounded-2xl font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                :style="'background:var(--accent)'">Entrar</button>
+            <p class="text-center text-xs text-text-muted mt-3">Senha padrão: <code
+                    class="bg-surface-muted px-1 rounded">admin123</code></p>
+        </div>
+    </div>
+
+
+
+
+    <div x-show="showProductForm" x-transition:enter="transition ease-out duration-200"
+        x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+        class="fixed inset-0 z-[60] flex items-end sm:items-center justify-center">
+
+        <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="showProductForm=false"></div>
+
+        <div class="relative bg-surface-card w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl p-6"
+            style="max-height:92dvh; overflow-y:auto; -webkit-overflow-scrolling:touch;"
+            x-transition:enter="transition ease-out duration-200"
+            x-transition:enter-start="translate-y-full sm:scale-95 opacity-0"
+            x-transition:enter-end="translate-y-0 sm:scale-100 opacity-100">
+
+            <template x-if="editingProduct">
+                <div>
+                    <h3 class="font-display font-bold text-text-primary text-lg mb-5"
+                        x-text="editingProduct.id ? '✏️ Editar Produto' : '➕ Novo Produto'"></h3>
+
+                    <div class="space-y-4">
+
+                        <div>
+                            <label class="form-label">Nome do produto *</label>
+                            <input type="text" x-model="editingProduct.name" class="form-input w-full">
+                        </div>
+
+                        <div>
+                            <label class="form-label">Descrição</label>
+                            <textarea x-model="editingProduct.desc" rows="2"
+                                class="form-input w-full resize-none"></textarea>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="form-label">Preço R$ *</label>
+                                <input type="number" step="0.01" x-model.number="editingProduct.price"
+                                    class="form-input w-full">
+                            </div>
+                            <div>
+                                <label class="form-label">Preço Promo R$</label>
+                                <input type="number" step="0.01" x-model.number="editingProduct.promoPrice"
+                                    placeholder="Opcional" class="form-input w-full">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="form-label">Categoria</label>
+                            <select x-model="editingProduct.category" class="form-input w-full">
+                                <template x-for="cat in categories" :key="cat.id">
+                                    <option :value="cat.id" x-text="(cat.icon||'📦')+' '+cat.name"></option>
+                                </template>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="form-label">URL da imagem</label>
+                            <input type="url" x-model="editingProduct.image" placeholder="https://…"
+                                class="form-input w-full">
+                        </div>
+                        <div x-show="editingProduct.image" class="rounded-xl overflow-hidden h-28">
+                            <img :src="editingProduct.image" class="w-full h-full object-cover"
+                                @error="editingProduct.image=''">
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="flex items-center justify-between bg-surface-muted rounded-xl p-3">
+                                <span class="text-sm font-medium text-text-primary">Disponível</span>
+                                <button @click="editingProduct.available=!editingProduct.available"
+                                    class="relative w-10 h-5 rounded-full transition-colors"
+                                    :style="editingProduct.available?'background:var(--accent)':'background:#d1d5db'">
+                                    <div class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                        :class="editingProduct.available?'translate-x-5':'translate-x-0.5'"></div>
+                                </button>
+                            </div>
+                            <div class="flex items-center justify-between bg-surface-muted rounded-xl p-3">
+                                <span class="text-sm font-medium text-text-primary">Destaque</span>
+                                <button @click="editingProduct.featured=!editingProduct.featured"
+                                    class="relative w-10 h-5 rounded-full transition-colors"
+                                    :style="editingProduct.featured?'background:var(--accent)':'background:#d1d5db'">
+                                    <div class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                        :class="editingProduct.featured?'translate-x-5':'translate-x-0.5'"></div>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- ═══ COMPLEMENTOS ═══ -->
+                        <div class="border-t border-dashed border-border pt-4">
+
+                            <div class="flex items-center justify-between mb-3">
+                                <div>
+                                    <h4 class="font-display font-bold text-text-primary text-sm">🧩 Complementos &
+                                        Adicionais</h4>
+                                    <p class="text-xs text-text-muted">Crie grupos de opções (Ponto da carne,
+                                        Adicionais, etc.)</p>
+                                </div>
+                                <span class="text-xs bg-accent/10 text-accent px-2 py-0.5 rounded-full font-bold"
+                                    x-text="(editingProduct.complements||[]).length + ' grupo(s)'"></span>
+                            </div>
+
+                            <!-- ── Grupos existentes ── -->
+                            <div class="space-y-3 mb-4">
+                                <template x-for="(group, gIdx) in (editingProduct.complements||[])" :key="group.id">
+                                    <div class="rounded-xl border border-border overflow-hidden" x-data="{
+                                       /* estado local: opções */
+                                       newOptName: '', newOptPrice: 0,
+                                       editingOptIdx: null, editOptName: '', editOptPrice: 0,
+                                       /* estado local: edição do grupo */
+                                       editingGroup: false,
+                                       editGrpName: '', editGrpType: 'multiple', editGrpMax: 3, editGrpRequired: false,
+                                       openGroupEdit() {
+                                         this.editGrpName     = group.name;
+                                         this.editGrpType     = group.type;
+                                         this.editGrpMax      = group.max;
+                                         this.editGrpRequired = group.required;
+                                         this.editingGroup    = true;
+                                       },
+                                       confirmGroupEdit() {
+                                         if (!this.editGrpName.trim()) return;
+                                         group.name     = this.editGrpName.trim();
+                                         group.type     = this.editGrpType;
+                                         group.max      = this.editGrpMax;
+                                         group.required = this.editGrpRequired;
+                                         /* deep-spread para forçar reatividade */
+                                         editingProduct = {
+                                           ...editingProduct,
+                                           complements: editingProduct.complements.map(g => ({...g, options:[...g.options]}))
+                                         };
+                                         this.editingGroup = false;
+                                       }
+                                     }">
+
+                                        <!-- ── Cabeçalho: visualização ── -->
+                                        <div x-show="!editingGroup"
+                                            class="flex items-center justify-between px-3 py-2 bg-surface-muted border-b border-border">
+                                            <div class="flex items-center gap-2 flex-wrap min-w-0">
+                                                <span class="text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0"
+                                                    :class="group.type==='single'
+                                                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                                    : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'"
+                                                    x-text="group.type==='single' ? '◉ Radio' : '☑ Multi'"></span>
+                                                <span class="font-bold text-text-primary text-sm truncate"
+                                                    x-text="group.name"></span>
+                                                <span x-show="group.required"
+                                                    class="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded dark:bg-red-900/30 flex-shrink-0">obrig.</span>
+                                                <span class="text-[10px] text-text-muted flex-shrink-0">max: <span
+                                                        x-text="group.max || '∞'"></span></span>
+                                            </div>
+                                            <div class="flex items-center gap-1 flex-shrink-0 ml-2">
+                                                <button @click="openGroupEdit()" title="Editar grupo"
+                                                    class="text-text-muted hover:text-accent text-xs px-2 py-1 rounded-lg hover:bg-accent/10 transition-colors">✏️</button>
+                                                <button @click="removeComplementGroup(gIdx)" title="Remover grupo"
+                                                    class="text-red-400 hover:text-red-600 text-xs px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">✕</button>
+                                            </div>
+                                        </div>
+
+                                        <!-- ── Cabeçalho: edição do grupo ── -->
+                                        <div x-show="editingGroup" class="px-3 py-3 border-b border-border space-y-2"
+                                            style="background:rgba(var(--accent-rgb),.05)">
+                                            <p class="text-[10px] font-bold text-accent uppercase tracking-wider">Editar
+                                                grupo</p>
+                                            <input type="text" x-model="editGrpName" placeholder="Nome do grupo"
+                                                class="form-input w-full text-xs py-1.5"
+                                                @keyup.escape="editingGroup=false" @keyup.enter="confirmGroupEdit()">
+                                            <div class="grid grid-cols-2 gap-2">
+                                                <select x-model="editGrpType" class="form-input text-xs py-1.5">
+                                                    <option value="single">◉ Escolha única</option>
+                                                    <option value="multiple">☑ Múltipla escolha</option>
+                                                </select>
+                                                <input type="number" x-model.number="editGrpMax" placeholder="Máx."
+                                                    min="1" class="form-input text-xs py-1.5">
+                                            </div>
+                                            <label
+                                                class="flex items-center gap-2 text-xs text-text-primary cursor-pointer">
+                                                <input type="checkbox" x-model="editGrpRequired" class="rounded">
+                                                Obrigatório
+                                            </label>
+                                            <!-- Botão confirmar edição do grupo -->
+                                            <div class="flex gap-2 pt-1">
+                                                <button @click="confirmGroupEdit()"
+                                                    class="flex-1 py-2 rounded-xl text-white text-xs font-bold transition-all active:scale-95"
+                                                    :style="'background:var(--accent)'">✓ Confirmar</button>
+                                                <button @click="editingGroup=false"
+                                                    class="flex-1 py-2 rounded-xl text-xs font-semibold border border-border text-text-muted transition-all active:scale-95"
+                                                    style="background:var(--surface-card)">Cancelar</button>
+                                            </div>
+                                        </div>
+
+                                        <!-- ── Opções ── -->
+                                        <div class="p-2 space-y-1">
+
+                                            <template x-for="(opt, oIdx) in (group.options||[])" :key="opt.id || oIdx">
+                                                <div>
+                                                    <!-- Visualização -->
+                                                    <div x-show="editingOptIdx !== oIdx"
+                                                        class="flex items-center gap-2 bg-surface-muted rounded-lg px-3 py-2">
+                                                        <span class="flex-1 text-sm text-text-primary"
+                                                            x-text="opt.name"></span>
+                                                        <span class="text-xs font-bold flex-shrink-0"
+                                                            :class="opt.price>0?'text-accent':'text-text-muted'"
+                                                            x-text="opt.price>0?'+'+formatMoney(opt.price):'grátis'"></span>
+                                                        <button
+                                                            @click="editingOptIdx=oIdx; editOptName=opt.name; editOptPrice=opt.price"
+                                                            title="Editar opção"
+                                                            class="text-text-muted hover:text-accent w-6 h-6 rounded flex items-center justify-center text-xs transition-colors flex-shrink-0">✏️</button>
+                                                        <button @click="removeComplementOption(gIdx, oIdx)"
+                                                            title="Remover"
+                                                            class="text-red-400 hover:text-red-600 w-6 h-6 rounded flex items-center justify-center text-xs transition-colors flex-shrink-0">✕</button>
+                                                    </div>
+
+                                                    <!-- Edição inline da opção -->
+                                                    <div x-show="editingOptIdx === oIdx"
+                                                        class="flex gap-2 p-2 rounded-lg border border-accent/30"
+                                                        style="background:rgba(var(--accent-rgb),.05)">
+                                                        <input type="text" x-model="editOptName"
+                                                            class="form-input flex-1 text-xs py-1.5"
+                                                            @keyup.escape="editingOptIdx=null" @keyup.enter="
+                                                             opt.name=editOptName.trim()||opt.name;
+                                                             opt.price=parseFloat(editOptPrice)||0;
+                                                             editingProduct={...editingProduct, complements: editingProduct.complements.map(g=>({...g,options:[...g.options]}))};
+                                                             editingOptIdx=null;">
+                                                        <input type="number" x-model.number="editOptPrice" step="0.50"
+                                                            min="0" class="form-input w-20 text-xs py-1.5" @keyup.enter="
+                                                             opt.name=editOptName.trim()||opt.name;
+                                                             opt.price=parseFloat(editOptPrice)||0;
+                                                             editingProduct={...editingProduct, complements: editingProduct.complements.map(g=>({...g,options:[...g.options]}))};
+                                                             editingOptIdx=null;">
+                                                        <!-- Botão confirmar edição da opção -->
+                                                        <button @click="
+                                                                opt.name=editOptName.trim()||opt.name;
+                                                                opt.price=parseFloat(editOptPrice)||0;
+                                                                editingProduct={...editingProduct, complements: editingProduct.complements.map(g=>({...g,options:[...g.options]}))};
+                                                                editingOptIdx=null"
+                                                            class="px-2.5 py-1.5 rounded-lg text-white text-xs font-bold flex-shrink-0"
+                                                            :style="'background:var(--accent)'">✓</button>
+                                                        <button @click="editingOptIdx=null"
+                                                            class="px-2.5 py-1.5 rounded-lg text-xs font-bold flex-shrink-0 border border-border text-text-muted">✕</button>
+                                                    </div>
+                                                </div>
+                                            </template>
+
+                                            <p x-show="(group.options||[]).length===0"
+                                                class="text-[10px] text-text-muted text-center py-2">
+                                                Nenhuma opção ainda.
+                                            </p>
+
+                                            <!-- Nova opção (state local, isolado por grupo) -->
+                                            <div class="flex gap-2 mt-2">
+                                                <input type="text" x-model="newOptName" placeholder="Nova opção…"
+                                                    class="form-input flex-1 text-xs py-1.5" @keyup.enter="
+                                                     if(newOptName.trim()){
+                                                       addComplementOption(gIdx, newOptName, newOptPrice);
+                                                       newOptName=''; newOptPrice=0;
+                                                     }">
+                                                <input type="number" x-model.number="newOptPrice" placeholder="R$"
+                                                    step="0.50" min="0" class="form-input w-20 text-xs py-1.5"
+                                                    @keyup.enter="
+                                                     if(newOptName.trim()){
+                                                       addComplementOption(gIdx, newOptName, newOptPrice);
+                                                       newOptName=''; newOptPrice=0;
+                                                     }">
+                                                <button @click="
+                                                        if(newOptName.trim()){
+                                                          addComplementOption(gIdx, newOptName, newOptPrice);
+                                                          newOptName=''; newOptPrice=0;
+                                                        }"
+                                                    class="px-3 py-1.5 rounded-lg text-white text-xs font-bold flex-shrink-0"
+                                                    :style="'background:var(--accent)'">+</button>
+                                            </div>
+
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+
+                            <!-- ── Novo grupo ── -->
+                            <div class="bg-surface-muted rounded-xl p-3 space-y-2.5">
+                                <p class="text-xs font-bold text-text-muted uppercase tracking-wider">Novo Grupo de
+                                    Complemento</p>
+                                <input type="text" x-model="newGroup.name"
+                                    placeholder="Nome do grupo (ex: Ponto da Carne)" class="form-input w-full text-sm">
+                                <div class="grid grid-cols-2 gap-2">
+                                    <select x-model="newGroup.type" class="form-input text-sm">
+                                        <option value="single">◉ Escolha única (radio)</option>
+                                        <option value="multiple">☑ Múltipla escolha</option>
+                                    </select>
+                                    <input type="number" x-model.number="newGroup.max" placeholder="Máx. seleções"
+                                        min="1" class="form-input text-sm">
+                                </div>
+                                <label class="flex items-center gap-2 text-sm text-text-primary cursor-pointer">
+                                    <input type="checkbox" x-model="newGroup.required" class="rounded">
+                                    Obrigatório
+                                </label>
+                                <button @click="addComplementGroup()"
+                                    class="w-full py-2 rounded-xl text-white font-bold text-sm"
+                                    :style="'background:var(--accent)'">
+                                    + Adicionar Grupo
+                                </button>
+                            </div>
+
+                        </div>
+                        <!-- ═══ /COMPLEMENTOS ═══ -->
+
+                        <button @click="saveProduct()" class="btn-primary w-full mt-2"
+                            x-text="editingProduct.id ? '💾 Salvar Alterações' : '+ Adicionar Produto'"></button>
+
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+   
+
+    <div x-show="showTutorial" x-transition:enter="transition ease-out duration-300"
+        x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+        x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100"
+        x-transition:leave-end="opacity-0" class="fixed inset-0 z-[70] flex items-center justify-center px-3 py-4">
+
+        <div class="absolute inset-0 bg-black/75 backdrop-blur-sm" @click="showTutorial=false"></div>
+
+        <!-- Modal container -->
+        <div class="relative w-full flex rounded-3xl shadow-2xl overflow-hidden"
+            style="max-width:780px; max-height:92dvh; background:var(--surface-card); border:1px solid var(--border);"
+            x-transition:enter="transition ease-out duration-300"
+            x-transition:enter-start="scale-95 opacity-0 translate-y-4"
+            x-transition:enter-end="scale-100 opacity-100 translate-y-0">
+
+            <!-- ── SIDEBAR ─────────────────────────────────────── -->
+            <div class="w-48 flex-shrink-0 flex flex-col border-r border-border overflow-y-auto"
+                style="background:var(--surface); max-height:92dvh;">
+
+                <!-- Brand -->
+                <div class="px-4 pt-4 pb-3 border-b border-border flex-shrink-0">
+                    <div class="flex items-center gap-2">
+                        <div class="w-7 h-7 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
+                            :style="'background:var(--accent)'">?</div>
+                        <div>
+                            <p class="text-xs font-display font-bold text-text-primary leading-tight">Tutorial</p>
+                            <p class="text-[10px] text-text-muted">Guia completo</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Grouped nav -->
+                <div class="flex-1 py-2 px-2 space-y-0.5 overflow-y-auto">
+                    <template x-for="(step, i) in tutorialSteps" :key="i">
+                        <button @click="tutorialStep = i"
+                            class="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-xl transition-all duration-150 group"
+                            :class="tutorialStep === i
+                                ? 'text-white font-semibold shadow-sm'
+                                : 'text-text-muted hover:text-text-primary hover:bg-surface-muted'"
+                            :style="tutorialStep === i ? 'background:var(--accent)' : ''">
+
+                            <!-- Completed dot vs number -->
+                            <div class="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 transition-all"
+                                :class="i < tutorialStep
+                                 ? 'bg-green-500 text-white'
+                                 : tutorialStep === i
+                                     ? 'bg-white/25 text-white'
+                                     : 'bg-surface-muted text-text-muted group-hover:bg-border'"
+                                x-text="i < tutorialStep ? '✓' : (i + 1)"></div>
+
+                            <span class="text-[11px] leading-tight truncate flex-1" x-text="step.title"></span>
+                        </button>
+                    </template>
+                </div>
+
+                <!-- Progress at bottom -->
+                <div class="px-3 py-3 border-t border-border flex-shrink-0">
+                    <div class="flex justify-between text-[10px] text-text-muted mb-1.5">
+                        <span>Progresso</span>
+                        <span class="font-mono font-bold" style="color:var(--accent)"
+                            x-text="Math.round((tutorialStep / (tutorialSteps.length - 1)) * 100) + '%'"></span>
+                    </div>
+                    <div class="h-1.5 bg-surface-muted rounded-full overflow-hidden">
+                        <div class="h-full rounded-full transition-all duration-500"
+                            :style="'background:var(--accent);width:' + Math.round((tutorialStep / (tutorialSteps.length - 1)) * 100) + '%'">
+                        </div>
+                    </div>
+                    <p class="text-[9px] text-text-muted mt-1.5 text-center">
+                        <span x-text="tutorialStep + 1"></span> de <span x-text="tutorialSteps.length"></span> passos
+                    </p>
+                </div>
+            </div>
+
+            <!-- ── MAIN CONTENT ────────────────────────────────── -->
+            <div class="flex-1 flex flex-col min-w-0" style="max-height:92dvh;">
+
+                <!-- Header with close -->
+                <div class="flex items-center justify-between px-5 py-3 border-b border-border flex-shrink-0">
+                    <!-- Group badge + breadcrumb -->
+                    <div class="flex items-center gap-2 min-w-0">
+                        <template x-if="tutorialSteps[tutorialStep]">
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                                    style="background:var(--accent-light);color:var(--accent)"
+                                    x-text="tutorialSteps[tutorialStep].groupIcon + ' ' + tutorialSteps[tutorialStep].groupLabel"></span>
+                                <span class="text-[10px] text-text-muted hidden sm:inline">→</span>
+                                <span class="text-[10px] text-text-muted truncate hidden sm:inline"
+                                    x-text="tutorialSteps[tutorialStep].title"></span>
+                            </div>
+                        </template>
+                    </div>
+                    <button @click="showTutorial=false"
+                        class="w-7 h-7 rounded-xl flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-muted transition-all flex-shrink-0">
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                                d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Step content -->
+                <div class="flex-1 overflow-y-auto">
+                    <template x-if="tutorialSteps[tutorialStep]">
+                        <div class="p-5">
+
+                            <!-- Visual header -->
+                            <div class="rounded-2xl p-5 mb-5 relative overflow-hidden flex items-start gap-4"
+                                style="background:linear-gradient(135deg, var(--accent-light) 0%, transparent 70%);">
+                                <div class="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl flex-shrink-0 shadow-sm border border-white/20"
+                                    style="background:var(--surface-card)">
+                                    <span x-text="tutorialSteps[tutorialStep].icon"></span>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <h3 class="font-display font-bold text-text-primary text-lg leading-tight mb-1"
+                                        x-text="tutorialSteps[tutorialStep].title"></h3>
+                                    <p class="text-xs text-text-muted font-mono"
+                                        x-text="'Passo ' + (tutorialStep + 1) + ' / ' + tutorialSteps.length"></p>
+                                </div>
+                                <!-- decorative dots -->
+                                <div class="absolute -right-4 -top-4 w-20 h-20 rounded-full opacity-10"
+                                    style="background:var(--accent)"></div>
+                            </div>
+
+                            <!-- Description -->
+                            <p class="text-sm text-text-secondary leading-relaxed mb-4"
+                                x-text="tutorialSteps[tutorialStep].content"></p>
+
+                            <!-- Visual demo card based on 'visual' property -->
+                            <div class="rounded-2xl border border-border overflow-hidden mb-4"
+                                style="background:var(--surface)">
+                                <!-- welcome visual -->
+                                <template x-if="tutorialSteps[tutorialStep].visual === 'welcome'">
+                                    <div class="p-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                        <template x-for="feat in [
+                                      {icon:'🛍️', label:'Cardápio digital com fotos'},
+                                      {icon:'💬', label:'Pedidos via WhatsApp'},
+                                      {icon:'📊', label:'Relatórios contábeis'},
+                                      {icon:'🔥', label:'Promoções automáticas'}
+                                    ]" :key="feat.label">
+                                            <div class="flex flex-col items-center gap-2 p-3 rounded-xl border border-border text-center"
+                                                style="background:var(--surface-card)">
+                                                <span class="text-2xl" x-text="feat.icon"></span>
+                                                <span class="text-[10px] text-text-muted leading-tight"
+                                                    x-text="feat.label"></span>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+
+                                <!-- store visual -->
+                                <template x-if="tutorialSteps[tutorialStep].visual === 'store'">
+                                    <div class="p-4 space-y-2">
+                                        <template x-for="field in [
+                                      {label:'Nome do Restaurante', value:'Ex: Hamburgueria do Vale', required:true},
+                                      {label:'WhatsApp', value:'5582999999999', required:true},
+                                      {label:'Chave PIX', value:'email@restaurante.com.br', required:false},
+                                      {label:'Taxa de entrega', value:'R$ 6,00', required:false},
+                                    ]" :key="field.label">
+                                            <div class="flex items-center gap-3">
+                                                <span class="text-[10px] w-28 flex-shrink-0 font-medium text-text-muted"
+                                                    x-text="field.label"></span>
+                                                <div class="flex-1 h-7 rounded-lg border flex items-center px-2.5"
+                                                    style="background:var(--surface-card);border-color:var(--border)">
+                                                    <span class="text-xs text-text-muted italic"
+                                                        x-text="field.value"></span>
+                                                </div>
+                                                <span x-show="field.required"
+                                                    class="text-[9px] text-red-400 font-bold flex-shrink-0">obrig.</span>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+
+                                <!-- open/close visual -->
+                                <template x-if="tutorialSteps[tutorialStep].visual === 'open'">
+                                    <div class="p-4 flex items-center gap-6 justify-center">
+                                        <div class="flex flex-col items-center gap-2">
+                                            <div
+                                                class="flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-green-500 bg-green-500/10">
+                                                <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                                                <span class="text-sm font-bold text-green-600">Aberto</span>
+                                            </div>
+                                            <span class="text-[10px] text-text-muted">Aceita pedidos</span>
+                                        </div>
+                                        <div class="w-px h-10" style="background:var(--border)"></div>
+                                        <div class="flex flex-col items-center gap-2">
+                                            <div
+                                                class="flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-red-400 bg-red-400/10">
+                                                <div class="w-2 h-2 rounded-full bg-red-400"></div>
+                                                <span class="text-sm font-bold text-red-500">Fechado</span>
+                                            </div>
+                                            <span class="text-[10px] text-text-muted">Bloqueia pedidos</span>
+                                        </div>
+                                    </div>
+                                </template>
+
+                                <!-- security visual -->
+                                <template x-if="tutorialSteps[tutorialStep].visual === 'security'">
+                                    <div class="p-4 space-y-2">
+                                        <template x-for="item in [
+                                      {icon:'🔒', label:'Sessão expira em 4h automaticamente', ok:true},
+                                      {icon:'🚫', label:'Bloqueio por 15 min após 5 tentativas erradas', ok:true},
+                                      {icon:'⚠️', label:'Senha padrão admin123 — troque agora!', ok:false},
+                                    ]" :key="item.label">
+                                            <div class="flex items-center gap-2.5 p-2.5 rounded-xl"
+                                                :class="item.ok ? '' : 'border border-red-400/30'"
+                                                :style="item.ok ? 'background:var(--surface-muted)' : 'background:rgba(239,68,68,0.06)'">
+                                                <span class="text-base flex-shrink-0" x-text="item.icon"></span>
+                                                <span class="text-xs"
+                                                    :class="item.ok ? 'text-text-secondary' : 'text-red-500 font-semibold'"
+                                                    x-text="item.label"></span>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+
+                                <!-- categories visual -->
+                                <template x-if="tutorialSteps[tutorialStep].visual === 'categories'">
+                                    <div class="p-4 flex flex-wrap gap-2">
+                                        <template x-for="cat in [
+                                      {icon:'🍔', name:'Burgers', active:true},
+                                      {icon:'🥤', name:'Bebidas', active:true},
+                                      {icon:'🎁', name:'Combos', active:true},
+                                      {icon:'🍩', name:'Sobremesas', active:true},
+                                      {icon:'🍟', name:'Acomp.', active:false},
+                                    ]" :key="cat.name">
+                                            <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium"
+                                                :class="cat.active ? 'border-transparent text-white' : 'border-border text-text-muted'"
+                                                :style="cat.active ? 'background:var(--accent)' : 'background:var(--surface-card)'">
+                                                <span x-text="cat.icon"></span>
+                                                <span x-text="cat.name"></span>
+                                                <span x-show="!cat.active" class="text-[9px] opacity-60">inativa</span>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+
+                                <!-- complements visual -->
+                                <template x-if="tutorialSteps[tutorialStep].visual === 'complements'">
+                                    <div class="p-4 space-y-2">
+                                        <template x-for="grp in [
+                                      {name:'Ponto da Carne', type:'single', required:true, badge:'◉ Radio'},
+                                      {name:'Adicionais', type:'multiple', required:false, badge:'☑ Multi'},
+                                    ]" :key="grp.name">
+                                            <div class="rounded-xl overflow-hidden border border-border">
+                                                <div class="flex items-center gap-2 px-3 py-2"
+                                                    style="background:var(--surface-muted)">
+                                                    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                                                        :class="grp.type==='single' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'"
+                                                        x-text="grp.badge"></span>
+                                                    <span class="text-xs font-bold text-text-primary flex-1"
+                                                        x-text="grp.name"></span>
+                                                    <span x-show="grp.required"
+                                                        class="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded">obrig.</span>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+
+                                <!-- options visual -->
+                                <template x-if="tutorialSteps[tutorialStep].visual === 'options'">
+                                    <div
+                                        class="p-4 divide-y divide-border rounded-xl overflow-hidden border border-border">
+                                        <template x-for="opt in [
+                                      {name:'Mal passado', price:0},
+                                      {name:'Ao ponto', price:0},
+                                      {name:'Bacon artesanal', price:4.00},
+                                      {name:'Queijo extra', price:2.50},
+                                    ]" :key="opt.name">
+                                            <div class="flex items-center gap-3 py-2">
+                                                <div class="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0"
+                                                    :class="opt.price === 0 ? 'bg-accent border-transparent' : 'border-border'"
+                                                    :style="opt.price === 0 ? 'background:var(--accent)' : ''">
+                                                    <template x-if="opt.price === 0">
+                                                        <svg class="w-2.5 h-2.5 text-white" fill="none"
+                                                            viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                                stroke-width="3" d="M5 13l4 4L19 7" />
+                                                        </svg>
+                                                    </template>
+                                                </div>
+                                                <span class="flex-1 text-xs text-text-primary" x-text="opt.name"></span>
+                                                <span class="text-xs font-bold"
+                                                    :class="opt.price > 0 ? 'text-accent' : 'text-text-muted'"
+                                                    x-text="opt.price > 0 ? '+R$' + opt.price.toFixed(2) : 'Grátis'"></span>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+
+                                <!-- discount_pct visual -->
+                                <template x-if="tutorialSteps[tutorialStep].visual === 'discount_pct'">
+                                    <div class="p-4 space-y-2">
+                                        <div class="flex items-center gap-3 p-3 rounded-xl border border-border"
+                                            style="background:var(--surface-card)">
+                                            <div class="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white text-sm"
+                                                style="background:var(--accent)">%</div>
+                                            <div class="flex-1">
+                                                <p class="text-xs font-bold text-text-primary">Happy Hour</p>
+                                                <p class="text-[10px] text-text-muted">15% off • Min: R$0,00</p>
+                                            </div>
+                                            <div class="w-9 h-5 rounded-full relative" style="background:var(--accent)">
+                                                <div
+                                                    class="absolute top-0.5 right-0.5 w-4 h-4 bg-white rounded-full shadow">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+
+                                <!-- free_delivery visual -->
+                                <template x-if="tutorialSteps[tutorialStep].visual === 'free_delivery'">
+                                    <div class="p-4">
+                                        <div class="flex items-center gap-3 p-3 rounded-xl border border-green-400/30"
+                                            style="background:rgba(34,197,94,0.06)">
+                                            <span class="text-2xl">🛵</span>
+                                            <div>
+                                                <p class="text-xs font-bold text-green-600">Frete Grátis Fim de Semana
+                                                </p>
+                                                <p class="text-[10px] text-text-muted">Pedidos acima de R$40,00 → Taxa
+                                                    zerada automaticamente</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+
+                                <!-- coupon visual -->
+                                <template x-if="tutorialSteps[tutorialStep].visual === 'coupon'">
+                                    <div class="p-4 space-y-2">
+                                        <div class="flex items-center gap-2.5 p-3 rounded-xl border border-dashed border-accent/40"
+                                            style="background:var(--accent-light)">
+                                            <span class="text-2xl">🎟️</span>
+                                            <div class="flex-1">
+                                                <p class="text-xs font-bold font-mono" style="color:var(--accent)">
+                                                    PRIMEIRACOMPRA</p>
+                                                <p class="text-[10px] text-text-muted">10% off • Min: R$30,00</p>
+                                            </div>
+                                        </div>
+                                        <div class="flex gap-2">
+                                            <div class="flex-1 h-8 rounded-xl border border-border flex items-center px-3"
+                                                style="background:var(--surface-card)">
+                                                <span class="text-[10px] font-mono text-text-muted">Digite o
+                                                    cupom…</span>
+                                            </div>
+                                            <div class="px-3 h-8 rounded-xl flex items-center text-[10px] font-bold text-white"
+                                                style="background:var(--accent)">Aplicar</div>
+                                        </div>
+                                    </div>
+                                </template>
+
+                                <!-- queue visual -->
+                                <template x-if="tutorialSteps[tutorialStep].visual === 'queue'">
+                                    <div class="p-4 space-y-2">
+                                        <template x-for="order in [
+                                      {num:'20240228-0001', name:'João Silva', status:'Preparando', color:'#f59e0b', emoji:'👨‍🍳', time:'12min', total:'R$49,90'},
+                                      {num:'20240228-0002', name:'Maria Oliveira', status:'Pago', color:'#3b82f6', emoji:'✅', time:'3min', total:'R$28,50'},
+                                    ]" :key="order.num">
+                                            <div class="rounded-xl border border-border overflow-hidden"
+                                                style="background:var(--surface-card)">
+                                                <div class="flex items-center gap-2 px-3 py-2 border-b border-border/60"
+                                                    style="background:var(--surface-muted)">
+                                                    <div class="w-2 h-2 rounded-full flex-shrink-0"
+                                                        :style="'background:'+order.color"></div>
+                                                    <span
+                                                        class="text-[10px] font-mono font-bold text-text-primary flex-1"
+                                                        x-text="'#'+order.num"></span>
+                                                    <span
+                                                        class="text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white"
+                                                        :style="'background:'+order.color"
+                                                        x-text="order.emoji+' '+order.status"></span>
+                                                </div>
+                                                <div class="flex items-center gap-2 px-3 py-2">
+                                                    <span class="flex-1 text-[10px] text-text-muted"
+                                                        x-text="order.name"></span>
+                                                    <span class="text-[10px] font-bold" :style="'color:'+order.color"
+                                                        x-text="order.time"></span>
+                                                    <span class="text-xs font-bold" style="color:var(--accent)"
+                                                        x-text="order.total"></span>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+
+                                <!-- kanban visual -->
+                                <template x-if="tutorialSteps[tutorialStep].visual === 'kanban'">
+                                    <div class="p-4 overflow-x-auto">
+                                        <div class="flex gap-2" style="min-width:360px">
+                                            <template x-for="col in [
+                                          {label:'Pago', emoji:'✅', color:'#3b82f6', count:3},
+                                          {label:'Preparo', emoji:'👨‍🍳', color:'#f59e0b', count:2},
+                                          {label:'A caminho', emoji:'🛵', color:'#8b5cf6', count:1},
+                                          {label:'Entregue', emoji:'🎉', color:'#22c55e', count:5},
+                                        ]" :key="col.label">
+                                                <div class="flex-1 min-w-0">
+                                                    <div class="flex items-center gap-1 px-2 py-1.5 rounded-lg text-white text-[10px] font-bold mb-1.5"
+                                                        :style="'background:'+col.color">
+                                                        <span x-text="col.emoji"></span>
+                                                        <span class="flex-1 truncate" x-text="col.label"></span>
+                                                        <span
+                                                            class="w-4 h-4 rounded-full bg-white/25 flex items-center justify-center text-[9px]"
+                                                            x-text="col.count"></span>
+                                                    </div>
+                                                    <div class="space-y-1">
+                                                        <template
+                                                            x-for="n in Array.from({length: Math.min(col.count, 2)})"
+                                                            :key="n">
+                                                            <div class="h-8 rounded-lg border border-border"
+                                                                style="background:var(--surface-card)"></div>
+                                                        </template>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </template>
+
+                                <!-- status visual -->
+                                <template x-if="tutorialSteps[tutorialStep].visual === 'status'">
+                                    <div class="p-4">
+                                        <div class="flex items-center gap-1 mb-3">
+                                            <template
+                                                x-for="(s, i) in ['✅ Pago','👨‍🍳 Preparo','🛵 Entrega','🎉 Entregue']"
+                                                :key="s">
+                                                <div class="flex items-center gap-1 flex-1">
+                                                    <div class="flex-1 h-1 rounded-full"
+                                                        :style="i < 2 ? 'background:var(--accent)' : 'background:var(--border)'">
+                                                    </div>
+                                                    <div class="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 border-2"
+                                                        :style="i < 2 ? 'background:var(--accent);border-color:var(--accent);color:white' : 'border-color:var(--border);color:var(--text-muted);background:var(--surface-card)'"
+                                                        x-text="s.split(' ')[0]"></div>
+                                                    <div class="flex-1 h-1 rounded-full"
+                                                        :style="i < 1 ? 'background:var(--accent)' : 'background:var(--border)'">
+                                                    </div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                        <p class="text-[10px] text-center text-text-muted">Fluxo automático ou escolha
+                                            manual de qualquer status</p>
+                                    </div>
+                                </template>
+
+                                <!-- reports visual -->
+                                <template x-if="tutorialSteps[tutorialStep].visual === 'reports'">
+                                    <div class="p-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                        <template x-for="kpi in [
+                                      {label:'Pedidos hoje', value:'24', color:'var(--accent)'},
+                                      {label:'Faturamento', value:'R$890', color:'#22c55e'},
+                                      {label:'Ticket médio', value:'R$37', color:'#8b5cf6'},
+                                      {label:'Total geral', value:'R$12k', color:'#f59e0b'},
+                                    ]" :key="kpi.label">
+                                            <div class="p-3 rounded-xl border border-border text-center"
+                                                style="background:var(--surface-card)">
+                                                <p class="text-base font-display font-bold" :style="'color:'+kpi.color"
+                                                    x-text="kpi.value"></p>
+                                                <p class="text-[9px] text-text-muted mt-0.5" x-text="kpi.label"></p>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+
+                                <!-- export visual -->
+                                <template x-if="tutorialSteps[tutorialStep].visual === 'export'">
+                                    <div class="p-4 grid grid-cols-4 gap-2">
+                                        <template x-for="exp in [
+                                      {icon:'📊', label:'Excel', sub:'5 planilhas'},
+                                      {icon:'📄', label:'CSV', sub:'Universal'},
+                                      {icon:'💾', label:'JSON', sub:'Backup'},
+                                      {icon:'🖨️', label:'PDF', sub:'Imprimir'},
+                                    ]" :key="exp.label">
+                                            <div class="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border text-center"
+                                                style="background:var(--surface-card)">
+                                                <span class="text-2xl" x-text="exp.icon"></span>
+                                                <p class="text-[10px] font-bold text-text-primary" x-text="exp.label">
+                                                </p>
+                                                <p class="text-[9px] text-text-muted" x-text="exp.sub"></p>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+
+                                <!-- closing visual -->
+                                <template x-if="tutorialSteps[tutorialStep].visual === 'closing'">
+                                    <div class="p-4 space-y-2">
+                                        <div class="flex items-center gap-2 p-3 rounded-xl border border-accent/30"
+                                            style="background:var(--accent-light)">
+                                            <span class="text-xl">🔒</span>
+                                            <div>
+                                                <p class="text-xs font-bold" style="color:var(--accent)">Fechamento
+                                                    registrado</p>
+                                                <p class="text-[10px] text-text-muted font-mono">28/02/2024 • 24 pedidos
+                                                    • R$890,00</p>
+                                            </div>
+                                        </div>
+                                        <div class="flex items-center gap-2 p-3 rounded-xl border border-border"
+                                            style="background:var(--surface-card)">
+                                            <span class="text-xl">🔗</span>
+                                            <div>
+                                                <p class="text-xs font-bold text-text-primary">Hash encadeado</p>
+                                                <p class="text-[10px] text-text-muted font-mono">a3f7c2d1 → 9b4e8f2a →
+                                                    ...</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+
+                                <!-- customer_order / tracking / notify / edit_order — generic fallback -->
+                                <template
+                                    x-if="['customer_order','tracking','notify','edit_order','products'].includes(tutorialSteps[tutorialStep].visual)">
+                                    <div class="p-4 flex items-center justify-center py-8">
+                                        <div class="text-center">
+                                            <div class="text-4xl mb-2" x-text="tutorialSteps[tutorialStep].icon"></div>
+                                            <p class="text-xs text-text-muted"
+                                                x-text="tutorialSteps[tutorialStep].groupLabel"></p>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+
+                            <!-- Tip box -->
+                            <div class="rounded-2xl p-3.5 flex items-start gap-3 border"
+                                style="background:var(--accent-light); border-color:rgba(var(--accent-rgb),.2)">
+                                <span class="text-base flex-shrink-0">💡</span>
+                                <p class="text-xs leading-relaxed" style="color:var(--accent)"
+                                    x-text="tutorialSteps[tutorialStep].tip"></p>
+                            </div>
+
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Footer navigation -->
+                <div class="flex items-center gap-2 px-5 py-3 border-t border-border flex-shrink-0"
+                    style="background:var(--surface)">
+
+                    <!-- Prev -->
+                    <button @click="if(tutorialStep > 0) tutorialStep--" :disabled="tutorialStep === 0"
+                        class="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-xs font-semibold text-text-muted transition-all disabled:opacity-30 disabled:cursor-not-allowed hover:text-text-primary hover:border-accent/30"
+                        style="background:var(--surface-card)">
+                        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                                d="M15 19l-7-7 7-7" />
+                        </svg>
+                        Anterior
+                    </button>
+
+                    <!-- Dots (condensed) -->
+                    <div class="flex-1 flex items-center justify-center gap-1 overflow-hidden">
+                        <template x-for="(s, i) in tutorialSteps" :key="i">
+                            <button @click="tutorialStep = i"
+                                class="rounded-full transition-all duration-300 flex-shrink-0"
+                                :class="i === tutorialStep ? 'w-4 h-2' : 'w-1.5 h-1.5'"
+                                :style="i === tutorialStep ? 'background:var(--accent)' : i < tutorialStep ? 'background:#22c55e' : 'background:var(--border)'"></button>
+                        </template>
+                    </div>
+
+                    <!-- Next / Finish -->
+                    <button @click="if(tutorialStep < tutorialSteps.length - 1) tutorialStep++; else showTutorial=false"
+                        class="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all active:scale-95"
+                        :style="'background:var(--accent)'">
+                        <span x-show="tutorialStep < tutorialSteps.length - 1">Próximo</span>
+                        <span x-show="tutorialStep === tutorialSteps.length - 1">🎉 Concluir</span>
+                        <svg x-show="tutorialStep < tutorialSteps.length - 1" class="w-3 h-3" fill="none"
+                            viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7" />
+                        </svg>
+                    </button>
+                </div>
+
+            </div><!-- /main -->
+        </div><!-- /modal container -->
+    </div>
+
+
+    <div x-show="showClearHistoryConfirm" x-transition:enter="transition ease-out duration-200"
+        x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+        x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100"
+        x-transition:leave-end="opacity-0" class="fixed inset-0 z-[90] flex items-center justify-center px-4"
+        style="display:none">
+
+        <!-- Backdrop -->
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            @click="showClearHistoryConfirm=false; clearHistoryPassword=''; clearHistoryPasswordError=''">
+        </div>
+
+        <!-- Card -->
+        <div class="relative w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden"
+            style="background:var(--surface-card); border:1px solid var(--border);"
+            x-transition:enter="transition ease-out duration-200" x-transition:enter-start="scale-95 opacity-0"
+            x-transition:enter-end="scale-100 opacity-100" @click.stop>
+
+            <!-- Header vermelho de atenção -->
+            <div class="flex items-center gap-3 px-5 py-4 border-b border-border"
+                style="background:rgba(239,68,68,0.06)">
+                <div class="w-10 h-10 rounded-2xl flex items-center justify-center text-xl flex-shrink-0"
+                    style="background:rgba(239,68,68,0.12)">🗑️</div>
+                <div>
+                    <p class="text-sm font-bold text-red-500">Limpar Histórico</p>
+                    <p class="text-xs text-text-muted">Esta ação não pode ser desfeita</p>
+                </div>
+            </div>
+
+            <!-- Body -->
+            <div class="p-5 space-y-4">
+                <p class="text-sm text-text-secondary leading-relaxed">
+                    Todos os pedidos registrados serão <strong class="text-red-500">permanentemente apagados</strong>
+                    do banco de dados. Confirme com a senha do admin para continuar.
+                </p>
+
+                <!-- Campo de senha -->
+                <div>
+                    <label class="block text-xs font-semibold text-text-muted mb-1.5">Senha do Admin</label>
+                    <input type="password" x-model="clearHistoryPassword" @keydown.enter="confirmClearHistory()"
+                        placeholder="Digite sua senha..."
+                        class="w-full px-3.5 py-2.5 rounded-xl border text-sm outline-none transition-all"
+                        :class="clearHistoryPasswordError ? 'border-red-400 ring-1 ring-red-400/40' : 'border-border focus:border-accent'"
+                        style="background:var(--surface); color:var(--text-primary)">
+
+                    <!-- Mensagem de erro -->
+                    <p x-show="clearHistoryPasswordError" x-text="clearHistoryPasswordError"
+                        class="text-xs text-red-500 mt-1.5 flex items-center gap-1">
+                    </p>
+                </div>
+
+                <!-- Botões -->
+                <div class="flex gap-2 pt-1">
+                    <button
+                        @click="showClearHistoryConfirm=false; clearHistoryPassword=''; clearHistoryPasswordError=''"
+                        class="flex-1 py-2.5 rounded-xl border border-border text-sm font-semibold text-text-muted transition-all hover:border-accent/40 hover:text-text-primary"
+                        style="background:var(--surface)">
+                        Cancelar
+                    </button>
+                    <button @click="confirmClearHistory()"
+                        class="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all active:scale-95"
+                        style="background:#ef4444">
+                        🗑️ Confirmar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
