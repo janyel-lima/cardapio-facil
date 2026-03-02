@@ -1422,12 +1422,15 @@ header {
 }
 
 /* ── Carousel ── */
-.fub-carousel { position: relative; margin: 0 -4px; }
+.fub-carousel { position: relative; }
 
 .fub-track {
-  display: flex; gap: 6px; overflow-x: auto; scroll-behavior: smooth;
+  display: flex; flex-wrap: nowrap; gap: 6px;
+  overflow-x: auto; scroll-behavior: smooth;
   padding: 10px 36px 14px 36px;
   scrollbar-width: none; -ms-overflow-style: none; -webkit-overflow-scrolling: touch;
+  /* impede que o flex container encolha os filhos */
+  min-width: 0;
 }
 .fub-track::-webkit-scrollbar { display: none; }
 
@@ -1460,6 +1463,8 @@ header {
   padding: 5px 11px 5px 8px; border-radius: 10px;
   background: rgba(255,255,255,.15);
   border: 1px solid rgba(255,255,255,.24);
+  /* nunca encolhe — o track faz o scroll */
+  flex-shrink: 0; white-space: nowrap;
   transition: all 160ms cubic-bezier(.22,1,.36,1);
   cursor: pointer; position: relative; overflow: hidden;
   animation: fubChipIn .28s var(--ease-out) both;
@@ -1632,12 +1637,14 @@ header {
 .fuc-rule { height: 1px; margin-bottom: 12px; background: rgba(255,255,255,.18); }
 
 /* ── Carousel ── */
-.fuc-carousel { position: relative; margin: 0 -4px; }
+.fuc-carousel { position: relative; }
 
 .fuc-track {
-  display: flex; gap: 6px; overflow-x: auto; scroll-behavior: smooth;
+  display: flex; flex-wrap: nowrap; gap: 6px;
+  overflow-x: auto; scroll-behavior: smooth;
   padding: 10px 36px 14px 36px;
   scrollbar-width: none; -ms-overflow-style: none; -webkit-overflow-scrolling: touch;
+  min-width: 0;
 }
 .fuc-track::-webkit-scrollbar { display: none; }
 
