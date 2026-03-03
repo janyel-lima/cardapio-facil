@@ -25,16 +25,17 @@ const firestoreDb  = firebase.firestore();
 const firebaseAuth = firebase.auth();
 
 // ── Dev: conecta aos emuladores ANTES de qualquer operação ─────────────────
-// Para usar: instale Firebase CLI e rode `firebase emulators:start`
-// Remova ou comente em produção.
-if (window.APP_ENV?.isDev) {
+// Para ativar: rode `firebase emulators:start` e depois `node scripts/seed-emulator.js`
+// Para desativar (usar Firebase real em dev): mude para false.
+const USE_EMULATOR = true;
+
+if (window.APP_ENV?.isDev && USE_EMULATOR) {
   try {
     firestoreDb.useEmulator('localhost', 8080);
     firebaseAuth.useEmulator('http://localhost:9099');
     console.info('[Firebase] 🛠 Emuladores ativados → Firestore:8080 | Auth:9099');
   } catch (e) {
-    // Emuladores não disponíveis — conecta ao projeto real em dev (aceitável)
-    console.warn('[Firebase] Emuladores não disponíveis, conectando ao projeto real.', e.message);
+    console.warn('[Firebase] Falha ao conectar emuladores:', e.message);
   }
 }
 
