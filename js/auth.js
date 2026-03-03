@@ -31,10 +31,19 @@ const appAuth = {
   // ── Inicializa subscriber ao currentUser ───────
   // Chamado dentro de init() do app.js, após loadAllData().
   _initCloudAuth() {
-    // db.cloud.currentUser é um Observable (rxjs)
-    // Subscribimos para manter cloudUser reativo no Alpine.
     db.cloud.currentUser.subscribe(user => {
       this.cloudUser = user ?? null;
+      
+      // Quando a sessão for confirmada e o usuário estiver logado:
+      if (this.isCloudAuthenticated) {
+        this.showAdminLogin = false; // Força o fechamento do modal
+        
+        // Se acabou de validar o OTP com sucesso, abre o painel direto
+        if (this.cloudLoginStep === 'done' && (this.isCloudAdmin || this.isCloudWorker)) {
+          this.showAdminPanel = true;
+          this.cloudLoginStep = 'email'; // Reseta a etapa silenciosamente para o futuro
+        }
+      }
     });
 
     db.cloud.syncState.subscribe(state => {
