@@ -10,7 +10,7 @@ function menuApp() {
   //
   //    Ordem de merge e precedência (último vence em conflito):
   //      appState       → estado inicial + seed data (orderHistory: [], auditLog: [])
-  //      appDatabase    → persistência Dexie (loadAllData, saveItems…) sem addAudit
+  //      appDatabase    → persistência Firestore (loadAllData, saveItems…) sem addAudit
   //      appUtils       → helpers puros (uuid, formatMoney, showToast…)
   //      appCart        → lógica de carrinho e checkout
   //      appAdmin       → CRUD admin + addAudit (hash encadeado) + exportações
@@ -50,9 +50,9 @@ function menuApp() {
         if (theme) this.setTheme(theme);
       }
 
-      // ── Carrega dados do Banco (Dexie) ────────────────────────────────────
-      await this.loadAllData();
-      this._initCloudAuth(); 
+      // ── Carrega dados do Firestore ────────────────────────────────────────
+      await this.loadAllData();   // popula estado inicial via Promise.all
+      this._initCloudAuth();      // registra onAuthStateChanged + verifica Email Link na URL
 
       // Nudge: aparece 3s após carregar, só para não autenticados
 setTimeout(() => {

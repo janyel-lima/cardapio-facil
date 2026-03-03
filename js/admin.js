@@ -30,19 +30,24 @@ const appAdmin = {
 
     try {
       if (!Array.isArray(this.auditLog)) {
-        this.logWarn('auditLog não é array — entrada de auditoria ignorada', { source: 'addAudit', type: 'auditStateError', action }, 'admin');
+        this.logWarn('auditLog não é array — entrada de auditoria ignorada',
+          { source: 'addAudit', type: 'auditStateError', action }, 'admin');
         return;
       }
-      const lastEntry  = this.auditLog.length > 0 ? this.auditLog[this.auditLog.length - 1] : null;
-      const prevHash   = lastEntry ? lastEntry.hash : '00000000';
-      const entry      = { id: this.uuid(), timestamp: new Date().toISOString(), action, data };
-      entry.hash       = this.djb2Hash(
+      const lastEntry = this.auditLog.length > 0 ? this.auditLog[this.auditLog.length - 1] : null;
+      const prevHash  = lastEntry ? lastEntry.hash : '00000000';
+      const entry     = { id: this.uuid(), timestamp: new Date().toISOString(), action, data };
+      entry.hash      = this.djb2Hash(
         prevHash + JSON.stringify({ id: entry.id, timestamp: entry.timestamp, action, data }),
       );
       this.auditLog.push(entry);
-      await db.auditLog.put(entry);
+
+      // ✅ FIRESTORE (era: await db.auditLog.put(entry))
+      await firestoreDb.collection('auditLog').doc(entry.id).set(entry);
+
     } catch (e) {
-      await this.logError(e.message || String(e), { stack: e.stack || null, source: 'addAudit', type: 'auditWriteError', action }, 'admin');
+      await this.logError(e.message || String(e),
+        { stack: e.stack || null, source: 'addAudit', type: 'auditWriteError', action }, 'admin');
     }
   },
 
@@ -502,12 +507,22 @@ const appAdmin = {
       this.showClearHistoryConfirm   = false;
       this.clearHistoryPassword      = '';
       this.clearHistoryPasswordError = '';
+
+      // ✅ FIRESTORE: deleta todos os pedidos em batch (era: db.orders.clear())
+      const snap  = await firestoreDb.collection('orders').get();
+      const CHUNK = 450;
+      for (let i = 0; i < snap.docs.length; i += CHUNK) {
+        const batch = firestoreDb.batch();
+        snap.docs.slice(i, i + CHUNK).forEach(d => batch.delete(d.ref));
+        await batch.commit();
+      }
+
       this.orderHistory.splice(0);
-      await db.orders.clear();
       await this.addAudit('HISTORY_CLEARED', {});
       this.showToast('Histórico apagado com sucesso', 'success', '🗑️');
     } catch (e) {
-      await this.logError(e.message || String(e), { stack: e.stack || null, source: 'confirmClearHistory', type: 'adminWriteError' }, 'admin');
+      await this.logError(e.message || String(e),
+        { stack: e.stack || null, source: 'confirmClearHistory', type: 'adminWriteError' }, 'admin');
       this.showToast('Erro ao limpar histórico.', 'error', '❌');
     }
   },

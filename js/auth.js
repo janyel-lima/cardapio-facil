@@ -1,34 +1,32 @@
-/* ═══════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════
    CARDÁPIO DIGITAL PRO — js/auth.js
-   Autenticação via Dexie Cloud (OTP email)
-═══════════════════════════════════════════════════ */
+   Autenticação via Firebase Authentication (Email Link)
 
-function _resolveCloud() {
-  if (window.APP_ENV?.isDev && window.mockCloud) return window.mockCloud;
-  return db.cloud;
-}
+   Migrado de: Dexie Cloud OTP
+   Estratégia: Email Link (passwordless) — Firebase nativo
+   Melhoria: sem código numérico frágil; link criptograficamente
+             assinado pelo Firebase, expiração automática.
+
+   Roles: armazenadas em Firestore /users/{uid}.role
+          ('admin' | 'worker' | 'client')
+═══════════════════════════════════════════════════════ */
 
 const appAuth = {
 
-  // ── Estado reativo ─────────────────────────────
-  cloudUser:        null,
-  cloudSyncing:     false,
-  cloudLoginEmail:  '',
-  cloudLoginOtp:    '',
-  cloudLoginStep:   'email',  // 'email' | 'otp' | 'done'
-  cloudLoginError:  '',
-  cloudOtpSent:     false,
-  showAdminLogin:   false,
-  showAdminPanel:   false,
-
-  // Flag interna: sinaliza ao subscriber para abrir o painel
-  // caso o usuário logado seja admin ou worker.
-  // Evita race condition onde cloudConfirmOtp() checa roles
-  // antes do subscriber atualizar cloudUser.
+  // ── Estado reativo ─────────────────────────────────────────────────────────
+  cloudUser:         null,
+  cloudSyncing:      false,
+  cloudLoginEmail:   '',
+  cloudLoginOtp:     '',           // mantido para compatibilidade com HTML (não usado no Firebase)
+  cloudLoginStep:    'email',      // 'email' | 'otp' (= link enviado) | 'done'
+  cloudLoginError:   '',
+  cloudOtpSent:      false,        // mantido para compatibilidade com HTML
+  showAdminLogin:    false,
+  showAdminPanel:    false,
   _pendingPanelOpen: false,
 
 
-  // ── Roles derivadas — SEMPRE com guarda ────────
+  // ── Roles derivadas — sempre com guarda de null ────────────────────────────
   get isCloudAuthenticated() {
     return !!this.cloudUser && this.cloudUser.isLoggedIn === true;
   },
@@ -49,50 +47,9 @@ const appAuth = {
   },
 
 
-  // ── Subscriber ─────────────────────────────────
-  // Única fonte de verdade para abrir/fechar o painel.
-  // cloudConfirmOtp() apenas levanta a flag _pendingPanelOpen;
-  // a decisão real acontece aqui, com cloudUser já atualizado.
-  _initCloudAuth() {
-    const cloud = _resolveCloud();
-
-    cloud.currentUser.subscribe(user => {
-      this.cloudUser = user ?? null;
-
-      if (!this.isCloudAuthenticated) {
-        // Sessão encerrada ou expirada — fecha tudo
-        this.showAdminPanel    = false;
-        this.showAdminLogin    = false;
-        this.showClientLogin   = false;
-        this._pendingPanelOpen = false;
-
-      } else {
-        // Autenticado — fecha modais de login sempre
-        this.showAdminLogin  = false;
-        this.showClientLogin = false;
-        this._loadUserProfile();
-        this.showLoginNudge = false;
-
-        // Abre o painel somente se:
-        //   (a) havia uma intenção pendente de abrir (login recém-feito), E
-        //   (b) o usuário realmente tem a role adequada
-        if (this._pendingPanelOpen) {
-          this._pendingPanelOpen = false;
-         
-          // Clientes: não abre o painel — apenas logou normalmente
-        }
-
-        // Se o painel está aberto mas o usuário perdeu a role
-        // (ex: rebaixado remotamente), fecha o painel.
-        if (this.showAdminPanel && !this.isCloudAdmin && !this.isCloudWorker) {
-          this.showAdminPanel = false;
-        }
-      }
-    });
-  },
-
-
-  // ── Login Passo 1 — envia o OTP ────────────────
+  // ── Passo 1 — envia o Email Link ───────────────────────────────────────────
+  // Substitui cloudSendOtp() do Dexie Cloud.
+  // Mesmo nome → sem alteração nos templates HTML.
   async cloudSendOtp() {
     if (!this.cloudLoginEmail.trim()) {
       this.cloudLoginError = 'Digite seu e-mail.';
@@ -102,65 +59,186 @@ const appAuth = {
       this.cloudLoginError = '';
       this.cloudSyncing    = true;
 
-      await _resolveCloud().login({ email: this.cloudLoginEmail.trim() });
+      const actionCodeSettings = {
+        // URL para onde o Firebase redireciona após o clique.
+        // Em produção, deve ser o domínio do seu app (ex: https://meurestaurante.web.app).
+        url:             window.location.origin + window.location.pathname,
+        handleCodeInApp: true,
+      };
 
-      this.cloudLoginStep = 'otp';
+      await firebaseAuth.sendSignInLinkToEmail(
+        this.cloudLoginEmail.trim(),
+        actionCodeSettings,
+      );
+
+      // Persiste o e-mail para completar o sign-in quando o link for clicado
+      // (mesmo dispositivo → sem precisar digitar o e-mail novamente).
+      localStorage.setItem('cardapio_signInEmail', this.cloudLoginEmail.trim());
+
+      this.cloudLoginStep = 'otp';    // reutiliza estado → HTML mostra tela "verifique e-mail"
       this.cloudOtpSent   = true;
 
     } catch (e) {
-      this.cloudLoginError = e.message || 'Falha ao enviar código. Tente novamente.';
+      this.cloudLoginError = _mapFirebaseAuthError(e.code) || e.message || 'Falha ao enviar link. Tente novamente.';
     } finally {
       this.cloudSyncing = false;
     }
   },
 
 
-  // ── Login Passo 2 — confirma o OTP ────────────
+  // ── Passo 2 — não é mais necessário ───────────────────────────────────────
+  // Com Firebase Email Link, o sign-in é completado automaticamente quando
+  // o usuário clica no link. Este método existe apenas para não quebrar
+  // templates HTML que chamam cloudConfirmOtp().
   async cloudConfirmOtp() {
-    if (!this.cloudLoginOtp.trim()) {
-      this.cloudLoginError = 'Digite o código recebido por e-mail.';
-      return;
-    }
-    try {
-      this.cloudLoginError = '';
-      this.cloudSyncing    = true;
-
-      // Sinaliza ANTES do await: o subscriber pode disparar
-      // de forma síncrona durante login() em alguns ambientes (ex: mock).
-      // Colocar a flag antes garante que ela esteja levantada
-      // quando o subscriber rodar, independentemente do timing.
-      this._pendingPanelOpen = true;
-
-      await _resolveCloud().login({ otp: this.cloudLoginOtp.trim() });
-
-      this.cloudLoginStep  = 'done';
-      this.cloudLoginEmail = '';
-      this.cloudLoginOtp   = '';
-
-      // Nota: NÃO verificamos isCloudAdmin/isCloudWorker aqui.
-      // O subscriber (_initCloudAuth) é responsável por abrir o painel
-      // com cloudUser já atualizado. Se o subscriber já disparou
-      // de forma síncrona durante login(), a flag já foi consumida
-      // e _pendingPanelOpen já é false aqui — sem duplicidade.
-
-    } catch (e) {
-      this._pendingPanelOpen = false; // limpa flag se login falhou
-      this.cloudLoginError = e.message || 'Código inválido ou expirado.';
-    } finally {
-      this.cloudSyncing = false;
-    }
+    this.cloudLoginError = '📧 Clique no link enviado para ' + (this.cloudLoginEmail || 'seu e-mail') + ' para entrar.';
   },
 
 
-  // ── Logout ─────────────────────────────────────
+  // ── Logout ─────────────────────────────────────────────────────────────────
   async cloudLogout() {
     try {
-      await _resolveCloud().logout();
-      // Subscriber cuida do reset da UI
+      await firebaseAuth.signOut();
+      // onAuthStateChanged cuida do reset da UI
     } catch (e) {
       await this.logError?.(e.message || String(e), {
         source: 'cloudLogout', type: 'authError', stack: e.stack || null,
       }, 'auth');
     }
   },
+
+
+  // ── Processa Email Link na URL (chamado em init()) ─────────────────────────
+  // Detecta se a URL atual contém um link de sign-in do Firebase e o processa.
+  // Cuida do caso "link aberto em outro dispositivo" pedindo o e-mail via prompt.
+  async _checkEmailLink() {
+    try {
+      if (!firebaseAuth.isSignInWithEmailLink(window.location.href)) return;
+
+      let email = localStorage.getItem('cardapio_signInEmail');
+
+      if (!email) {
+        // Usuário abriu o link em outro dispositivo — solicita confirmação do e-mail
+        email = window.prompt(
+          'Para continuar, confirme o endereço de e-mail que você usou para entrar:',
+        );
+        if (!email) return;
+      }
+
+      this.cloudSyncing      = true;
+      this._pendingPanelOpen = true;
+
+      await firebaseAuth.signInWithEmailLink(email.trim(), window.location.href);
+
+      localStorage.removeItem('cardapio_signInEmail');
+
+      // Remove o link de sign-in da URL (segurança + UX limpo)
+      window.history.replaceState({}, document.title, window.location.pathname);
+
+    } catch (e) {
+      console.error('[auth] Erro ao processar email link:', e);
+      this.cloudLoginError   = _mapFirebaseAuthError(e.code) || 'Link inválido ou expirado. Solicite um novo.';
+      this._pendingPanelOpen = false;
+    } finally {
+      this.cloudSyncing = false;
+    }
+  },
+
+
+  // ── Subscriber: onAuthStateChanged ────────────────────────────────────────
+  // Única fonte de verdade para estado de autenticação.
+  // Busca a role do usuário no Firestore /users/{uid} após cada login.
+  _initCloudAuth() {
+    // Verifica link de e-mail na URL antes de registrar o subscriber
+    this._checkEmailLink();
+
+    firebaseAuth.onAuthStateChanged(async firebaseUser => {
+      if (!firebaseUser) {
+        // Sessão encerrada ou expirada — reseta tudo
+        this.cloudUser         = null;
+        this.showAdminPanel    = false;
+        this.showAdminLogin    = false;
+        this.showClientLogin   = false;
+        this._pendingPanelOpen = false;
+        this.cloudLoginStep    = 'email';
+        this.cloudOtpSent      = false;
+        return;
+      }
+
+      // Busca role no Firestore (/users/{uid})
+      // roles são definidas pelo admin diretamente no Firestore Console
+      // ou via função auxiliar _setUserRole() abaixo.
+      let roles = [];
+      try {
+        const userDoc = await firestoreDb.collection('users').doc(firebaseUser.uid).get();
+        if (userDoc.exists) {
+          const role = userDoc.data()?.role;
+          if (role) roles = [role];
+        }
+      } catch (e) {
+        // Falha não-crítica: usuário autenticado mas sem role definida = cliente
+        console.warn('[auth] Não foi possível carregar role:', e.message);
+      }
+
+      this.cloudUser = {
+        userId:     firebaseUser.uid,
+        name:       firebaseUser.displayName
+                      || firebaseUser.email?.split('@')[0]
+                      || 'Usuário',
+        email:      firebaseUser.email,
+        roles,
+        isLoggedIn: true,
+      };
+
+      // Fecha modais de login sempre que autenticado
+      this.showAdminLogin    = false;
+      this.showClientLogin   = false;
+      this.cloudLoginStep    = 'done';
+      this._loadUserProfile?.();
+      this.showLoginNudge    = false;
+
+      // Abre painel se havia intenção pendente E o usuário tem a role
+      if (this._pendingPanelOpen) {
+        this._pendingPanelOpen = false;
+        if (this.isCloudAdmin || this.isCloudWorker) {
+          this.showAdminPanel = true;
+        }
+      }
+
+      // Se o painel está aberto mas o usuário perdeu a role (rebaixado remotamente)
+      if (this.showAdminPanel && !this.isCloudAdmin && !this.isCloudWorker) {
+        this.showAdminPanel = false;
+      }
+    });
+  },
+
+
+  // ── Utilitário: define role de um usuário (uso admin) ─────────────────────
+  // Chame no console do browser ou em um script de setup:
+  //   await this._setUserRole('uid-do-usuario', 'admin')
+  async _setUserRole(uid, role) {
+    const validRoles = ['admin', 'worker', 'client'];
+    if (!validRoles.includes(role)) {
+      throw new Error(`Role inválida: "${role}". Use: ${validRoles.join(', ')}`);
+    }
+    await firestoreDb.collection('users').doc(uid).set({ role }, { merge: true });
+    console.info(`[auth] Role "${role}" atribuída ao usuário ${uid}`);
+  },
 };
+
+
+// ── Mapeamento de códigos Firebase → mensagens PT-BR ──────────────────────────
+function _mapFirebaseAuthError(code) {
+  const map = {
+    'auth/invalid-email':           'E-mail inválido.',
+    'auth/user-not-found':          'Usuário não encontrado.',
+    'auth/invalid-action-code':     'Link inválido ou já utilizado.',
+    'auth/expired-action-code':     'Link expirado. Solicite um novo.',
+    'auth/too-many-requests':       'Muitas tentativas. Aguarde alguns minutos.',
+    'auth/network-request-failed':  'Erro de conexão. Verifique sua internet.',
+    'auth/email-already-in-use':    'E-mail já cadastrado.',
+    'auth/operation-not-allowed':   'Método de autenticação não habilitado. Ative "Email Link" no Firebase Console → Authentication → Sign-in methods.',
+    'auth/missing-email':           'E-mail não informado.',
+  };
+  return map[code] || null;
+}

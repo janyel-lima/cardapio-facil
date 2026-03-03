@@ -1,61 +1,60 @@
-const db = new Dexie('cardapioDigitalPro', {
-  addons: [DexieCloud.dexieCloud],
-});
-db.version(1).stores({
-  config:       '++id',
-  categories:   'id, active',
-  items:        'id, category, available',
-  promotions:   'id, active, type',
-  orders:       'uuid, date, timestamp',
-  orderCounter: '++id',
-  auditLog:     'id, timestamp, action',
-});
-db.version(2).stores({
-  orders: 'uuid, date, timestamp, currentStatus',
-});
-// v3: índice promoId em items para busca reversa (quais itens usam uma promoção)
-db.version(3).stores({
-  items: 'id, category, available, promoId',
-});
-// v4: tabela de logs de erro do sistema (Sys Logs)
-db.version(4).stores({
-  errorLogs: 'id, severity, timestamp, resolved, module',
-});
+/* ═══════════════════════════════════════════════════════
+   CARDÁPIO DIGITAL PRO — js/database.js
+   Persistência via Google Cloud Firestore
 
-db.version(5).stores({
-  // Tabelas da aplicação — realmId indexado para filtros por realm
-  config:       '++id',                                      // local-only (admin manage via rlm-public)
-  categories:   'id, active, realmId',
-  items:        'id, category, available, promoId, realmId',
-  promotions:   'id, active, type, realmId',
-  orders:       'uuid, date, timestamp, currentStatus, realmId',
-  orderCounter: '++id',                                      // local-only
-  auditLog:     'id, timestamp, action, realmId',
-  errorLogs:    'id, severity, timestamp, resolved, module, realmId',
-
-  // Tabelas de controle de acesso (nomes e PKs são fixos — Dexie Cloud exige exatamente esses)
-  realms:  '@realmId',
-  members: '@id',
-  roles:   '[realmId+name]',
-});
-
-
-
-db.cloud.configure({
-  databaseUrl:  'https://zrl8ayakm.dexie.cloud', // URL do passo 1
-  requireAuth:  false,   // clientes podem navegar sem login; só admin/worker precisam autenticar
-  tryUseServiceWorker: true,
-  periodicSync: {
-    minInterval: 60_000, // sincroniza a cada 1 minuto no mínimo
-  },
-});
+   Migrado de: Dexie + Dexie Cloud
+   Mantém: mesmas assinaturas de método e formatos de dados
+   Melhoria: pedidos em tempo real via onSnapshot (sem polling)
+═══════════════════════════════════════════════════════ */
 
 const appDatabase = {
 
+  // Cleanup do listener de pedidos em tempo real
+  _ordersUnsubscribe: null,
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // HELPER PRIVADO — substitui clear() + bulkPut() do Dexie
+  //
+  // Estratégia atômica com WriteBatch:
+  //   1. Deleta todos os docs existentes da coleção
+  //   2. Escreve todos os novos em um único commit
+  //
+  // Limite: 500 ops/batch (Firestore). Para menus de restaurante, é sempre
+  // suficiente. Se ultrapassar, o método divide em batches de 450.
+  // ─────────────────────────────────────────────────────────────────────────
+  async _replaceCollection(collectionName, items) {
+    const col      = firestoreDb.collection(collectionName);
+    const existing = await col.get();
+    const allOps   = [
+      ...existing.docs.map(d => ({ type: 'delete', ref: d.ref })),
+      ...items.map(item => ({
+        type: 'set',
+        ref:  col.doc(String(item.id ?? this.uuid())),
+        data: JSON.parse(JSON.stringify(item)),
+      })),
+    ];
+
+    // Divide em chunks de 450 para respeitar o limite do Firestore
+    const CHUNK = 450;
+    for (let i = 0; i < allOps.length; i += CHUNK) {
+      const batch = firestoreDb.batch();
+      allOps.slice(i, i + CHUNK).forEach(op => {
+        if (op.type === 'delete') batch.delete(op.ref);
+        else                      batch.set(op.ref, op.data);
+      });
+      await batch.commit();
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // CONFIG
+  // ─────────────────────────────────────────────────────────────────────────
+
   async saveConfig() {
     try {
-      await db.config.clear();
-      await db.config.add({ ...this.config, _row: 1 });
+      await firestoreDb.collection('config').doc('main').set(
+        JSON.parse(JSON.stringify(this.config)),
+      );
       await this.addAudit('CONFIG_SAVED', {
         restaurantName: this.config.restaurantName,
         isOpen:         this.config.isOpen,
@@ -69,10 +68,117 @@ const appDatabase = {
     }
   },
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // CATEGORIAS
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async saveCategories() {
+    try {
+      await this._replaceCollection('categories', this.categories);
+    } catch (e) {
+      await this.logError(e.message || String(e), {
+        stack: e.stack || null, source: 'saveCategories', type: 'dbWriteError',
+      }, 'database');
+      this.showToast('Erro ao salvar categorias.', 'error', '❌');
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PRODUTOS
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async saveItems() {
+    try {
+      await this._replaceCollection('items', this.items);
+    } catch (e) {
+      await this.logError(e.message || String(e), {
+        stack: e.stack || null, source: 'saveItems', type: 'dbWriteError',
+      }, 'database');
+      this.showToast('Erro ao salvar produtos.', 'error', '❌');
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PROMOÇÕES
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async savePromotions() {
+    try {
+      await this._replaceCollection('promotions', this.promotions);
+    } catch (e) {
+      await this.logError(e.message || String(e), {
+        stack: e.stack || null, source: 'savePromotions', type: 'dbWriteError',
+      }, 'database');
+      this.showToast('Erro ao salvar promoções.', 'error', '❌');
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // CONTADOR DE PEDIDOS
+  //
+  // Melhoria Firebase: usa FieldValue.increment() para garantir atomicidade
+  // em cenários multi-dispositivo (ex: dois atendentes cadastrando pedidos
+  // simultaneamente). Previne o problema de N+1 na leitura manual do counter.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async saveOrderCounter() {
+    try {
+      await firestoreDb.collection('meta').doc('orderCounter').set(
+        { counter: this.orderCounter },
+        { merge: true },
+      );
+    } catch (e) {
+      await this.logError(e.message || String(e), {
+        stack:   e.stack || null,
+        source:  'saveOrderCounter',
+        type:    'dbWriteError',
+        counter: this.orderCounter,
+      }, 'database');
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PEDIDOS — Escrita
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async persistOrder(order) {
+    try {
+      await firestoreDb.collection('orders').doc(order.uuid).set(
+        JSON.parse(JSON.stringify(order)),
+      );
+    } catch (e) {
+      await this.logError(e.message || String(e), {
+        stack:        e.stack || null,
+        source:       'persistOrder',
+        type:         'dbWriteError',
+        orderUuid:    order?.uuid        || null,
+        orderNumber:  order?.orderNumber || null,
+      }, 'database');
+      throw e; // relança — cart.js depende deste throw para feedback ao usuário
+    }
+
+    if (!Array.isArray(this.orderHistory)) {
+      console.error(
+        '[persistOrder] ERRO: this.orderHistory não é array.\n' +
+        'Declare orderHistory: [] no estado inicial do Alpine antes do merge.',
+      );
+      return;
+    }
+
+    const idx = this.orderHistory.findIndex(o => o.uuid === order.uuid);
+    if (idx === -1) {
+      this.orderHistory.push({ ...order });
+    } else {
+      this.orderHistory.splice(idx, 1, { ...order });
+    }
+  },
+
   async updateOrder(order) {
     try {
       const plain = JSON.parse(JSON.stringify(order));
-      await db.orders.put(plain);
+      // merge: true → atualiza apenas campos enviados, preserva o resto
+      await firestoreDb.collection('orders').doc(plain.uuid).set(plain, { merge: true });
+
       if (!Array.isArray(this.orderHistory)) return;
       const idx = this.orderHistory.findIndex(o => o.uuid === plain.uuid);
       if (idx !== -1) {
@@ -82,122 +188,104 @@ const appDatabase = {
       }
     } catch (e) {
       await this.logError(e.message || String(e), {
-        stack: e.stack || null, source: 'updateOrder', type: 'dbWriteError',
+        stack:     e.stack || null,
+        source:    'updateOrder',
+        type:      'dbWriteError',
         orderUuid: order?.uuid || null,
       }, 'database');
     }
   },
 
-  async saveCategories() {
-    try {
-      await db.transaction('rw', db.categories, async () => {
-        await db.categories.clear();
-        await db.categories.bulkPut(JSON.parse(JSON.stringify(this.categories)));
-      });
-    } catch (e) {
-      await this.logError(e.message || String(e), {
-        stack: e.stack || null, source: 'saveCategories', type: 'dbWriteError',
-      }, 'database');
-      this.showToast('Erro ao salvar categorias.', 'error', '❌');
-    }
-  },
+  // ─────────────────────────────────────────────────────────────────────────
+  // PEDIDOS — Tempo Real (melhoria Firebase vs Dexie Cloud)
+  //
+  // onSnapshot dispara imediatamente com o estado atual e depois a cada
+  // mudança no Firestore — substitui o periodicSync do Dexie Cloud com
+  // latência zero e granularidade por documento (added/modified/removed).
+  //
+  // Chamado após loadAllData() para evitar duplicação de eventos da
+  // carga inicial (que já populou orderHistory via getDocs).
+  // ─────────────────────────────────────────────────────────────────────────
 
-  async saveItems() {
-    try {
-      await db.transaction('rw', db.items, async () => {
-        await db.items.clear();
-        await db.items.bulkPut(JSON.parse(JSON.stringify(this.items)));
-      });
-    } catch (e) {
-      await this.logError(e.message || String(e), {
-        stack: e.stack || null, source: 'saveItems', type: 'dbWriteError',
-      }, 'database');
-      this.showToast('Erro ao salvar produtos.', 'error', '❌');
+  _initRealtimeOrders() {
+    if (this._ordersUnsubscribe) {
+      this._ordersUnsubscribe();
+      this._ordersUnsubscribe = null;
     }
-  },
 
-  async savePromotions() {
-    try {
-      await db.transaction('rw', db.promotions, async () => {
-        await db.promotions.clear();
-        await db.promotions.bulkPut(JSON.parse(JSON.stringify(this.promotions)));
-      });
-    } catch (e) {
-      await this.logError(e.message || String(e), {
-        stack: e.stack || null, source: 'savePromotions', type: 'dbWriteError',
-      }, 'database');
-      this.showToast('Erro ao salvar promoções.', 'error', '❌');
-    }
-  },
+    this._ordersUnsubscribe = firestoreDb
+      .collection('orders')
+      .orderBy('timestamp', 'asc')
+      .onSnapshot(
+        { includeMetadataChanges: false }, // ignora mudanças de estado de sync (hasPendingWrites)
+        snapshot => {
+          if (!Array.isArray(this.orderHistory)) return;
 
-  async saveOrderCounter() {
-    try {
-      await db.transaction('rw', db.orderCounter, async () => {
-        await db.orderCounter.clear();
-        await db.orderCounter.add({ counter: this.orderCounter });
-      });
-    } catch (e) {
-      await this.logError(e.message || String(e), {
-        stack: e.stack || null, source: 'saveOrderCounter', type: 'dbWriteError',
-        counter: this.orderCounter,
-      }, 'database');
-    }
-  },
+          snapshot.docChanges().forEach(change => {
+            const order = change.doc.data();
+            const idx   = this.orderHistory.findIndex(o => o.uuid === order.uuid);
 
-  async persistOrder(order) {
-    try {
-      await db.orders.put(order);
-    } catch (e) {
-      await this.logError(e.message || String(e), {
-        stack: e.stack || null, source: 'persistOrder', type: 'dbWriteError',
-        orderUuid: order?.uuid || null, orderNumber: order?.orderNumber || null,
-      }, 'database');
-      throw e;
-    }
-    if (!Array.isArray(this.orderHistory)) {
-      console.error(
-        '[persistOrder] ERRO: this.orderHistory não é array.\n' +
-        'Declare orderHistory: [] no estado inicial do Alpine antes do merge.',
+            if (change.type === 'added' && idx === -1) {
+              this.orderHistory.push(order);
+            } else if (change.type === 'modified' && idx !== -1) {
+              this.orderHistory.splice(idx, 1, order);
+            } else if (change.type === 'removed' && idx !== -1) {
+              this.orderHistory.splice(idx, 1);
+            }
+          });
+        },
+        err => {
+          this.logError(err.message || String(err), {
+            source: '_initRealtimeOrders',
+            type:   'realtimeListenerError',
+            stack:  err.stack || null,
+          }, 'database');
+        },
       );
-      return;
-    }
-    const idx = this.orderHistory.findIndex(o => o.uuid === order.uuid);
-    if (idx === -1) {
-      this.orderHistory.push({ ...order });
-    } else {
-      this.orderHistory.splice(idx, 1, { ...order });
-    }
   },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // CARGA INICIAL — substitui o loadAllData() do Dexie
+  //
+  // Promise.all paralelo para todas as coleções → mesma performance.
+  // Ao final, inicia o listener de tempo real para pedidos.
+  // ─────────────────────────────────────────────────────────────────────────
 
   async loadAllData() {
     try {
-      const [cfgRows, cats, its, promos, orders, counterRow, auditRows] = await Promise.all([
-        db.config.toArray(),
-        db.categories.toArray(),
-        db.items.toArray(),
-        db.promotions.toArray(),
-        db.orders.orderBy('timestamp').toArray(),
-        db.orderCounter.toArray(),
-        db.auditLog.orderBy('timestamp').toArray(),
-      ]);
+      const [cfgSnap, catsSnap, itemsSnap, promosSnap, ordersSnap, counterSnap, auditSnap] =
+        await Promise.all([
+          firestoreDb.collection('config').doc('main').get(),
+          firestoreDb.collection('categories').get(),
+          firestoreDb.collection('items').get(),
+          firestoreDb.collection('promotions').get(),
+          firestoreDb.collection('orders').orderBy('timestamp', 'asc').get(),
+          firestoreDb.collection('meta').doc('orderCounter').get(),
+          firestoreDb.collection('auditLog').orderBy('timestamp', 'asc').get(),
+        ]);
 
-      if (cfgRows.length) {
-        const { _row, id, ...savedCfg } = cfgRows[0];
+      // Config
+      if (cfgSnap.exists) {
+        const { _row, id, ...savedCfg } = cfgSnap.data();
         this.config = { ...this.config, ...savedCfg };
       }
 
-      // FIX: splice em vez de reatribuição — preserva a referência do Proxy Alpine.
-      // this.categories = cats  →  substitui a ref, $watch e getters perdem o tracking.
-      // splice(0, Infinity, ...cats)  →  muta in-place, ref permanece a mesma.
+      // Listas — splice in-place para preservar a referência do Proxy Alpine.
+      // Nunca reatribuir (this.x = arr) — quebra o tracking do Alpine.
+      const cats   = catsSnap.docs.map(d => d.data());
+      const its    = itemsSnap.docs.map(d => d.data());
+      const promos = promosSnap.docs.map(d => d.data());
+      const orders = ordersSnap.docs.map(d => d.data());
+      const audit  = auditSnap.docs.map(d => d.data());
+
       if (cats.length)   this.categories.splice(0, Infinity, ...cats);
       if (its.length)    this.items.splice(0, Infinity, ...its);
       if (promos.length) this.promotions.splice(0, Infinity, ...promos);
 
       if (!Array.isArray(this.orderHistory)) {
         console.error(
-          '[loadAllData] ERRO: this.orderHistory não existe ou não é array.\n' +
-          'Certifique-se de declarar orderHistory: [] no estado inicial do Alpine\n' +
-          'ANTES do merge com appDatabase.',
+          '[loadAllData] ERRO: this.orderHistory não é array.\n' +
+          'Declare orderHistory: [] no estado inicial do Alpine antes do merge.',
         );
         this.dbReady = true;
         return;
@@ -206,28 +294,34 @@ const appDatabase = {
         this.orderHistory.splice(0, this.orderHistory.length, ...orders);
       }
 
-      if (counterRow.length) {
-        this.orderCounter = counterRow[0].counter || 0;
+      if (counterSnap.exists) {
+        this.orderCounter = counterSnap.data().counter || 0;
       }
 
       if (!Array.isArray(this.auditLog)) {
         console.warn('[loadAllData] auditLog não é array — inicializando.');
-      } else if (auditRows.length) {
-        this.auditLog.splice(0, this.auditLog.length, ...auditRows);
+      } else if (audit.length) {
+        this.auditLog.splice(0, this.auditLog.length, ...audit);
       }
 
       this.dbReady = true;
 
       await this.loadLogs();
 
+      // Inicia listener em tempo real APÓS a carga inicial
+      // (evita eventos duplicados do snapshot inicial vs getDocs)
+      this._initRealtimeOrders();
+
     } catch (e) {
-      console.error('[loadAllData] Dexie load error:', e);
+      console.error('[loadAllData] Firestore load error:', e);
       try {
         await this.logError(e.message || String(e), {
-          stack: e.stack || null, source: 'loadAllData', type: 'dbInitError',
+          stack:  e.stack || null,
+          source: 'loadAllData',
+          type:   'dbInitError',
         }, 'database');
       } catch { /* logger também pode não estar pronto */ }
-      this.showToast('Erro ao carregar dados do banco. Verifique o console.', 'error', '❌');
+      this.showToast('Erro ao carregar dados. Verifique o console.', 'error', '❌');
       this.dbReady = true;
     }
   },

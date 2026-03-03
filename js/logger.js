@@ -142,13 +142,12 @@ const appLogger = {
    */
   async _writeLog(severity, message, context = {}, module = 'app') {
     try {
-      // Coleta contexto de ambiente automaticamente
       const env = _buildEnvSnapshot();
 
       const entry = {
         id:        _generateLogId(),
         severity,
-        message:   String(message).slice(0, 2000), // limite de segurança
+        message:   String(message).slice(0, 2000),
         module:    String(module || 'app'),
         context:   _sanitizeContext(context),
         env,
@@ -157,23 +156,20 @@ const appLogger = {
         sessionId: this.sessionId || null,
       };
 
-      // Persiste no Dexie
-      await db.errorLogs.add(entry);
+      // Persiste no Firestore (substitui db.errorLogs.add)
+      await firestoreDb.collection('errorLogs').doc(entry.id).set(entry);
 
-      // Atualiza array reativo via push (sem quebrar referência)
       if (Array.isArray(this.errorLogs)) {
         this.errorLogs.push({ ...entry });
         this._logSessionErrors++;
       }
 
-      // Erros críticos mostram toast discreto
       if (severity === 'error' && typeof this.showToast === 'function') {
         this.showToast(`Erro registrado: ${String(message).slice(0, 60)}`, 'error', '🔴');
       }
 
       return entry.id;
     } catch (persistErr) {
-      // Nunca lançar de dentro do logger — apenas console
       console.error('[appLogger._writeLog] Falha ao persistir log:', persistErr);
       return null;
     }
@@ -187,7 +183,13 @@ const appLogger = {
    */
   async loadLogs() {
     try {
-      const rows = await db.errorLogs.orderBy('timestamp').toArray();
+      const snap = await firestoreDb
+        .collection('errorLogs')
+        .orderBy('timestamp', 'asc')
+        .get();
+
+      const rows = snap.docs.map(d => d.data());
+
       if (Array.isArray(this.errorLogs)) {
         this.errorLogs.splice(0, this.errorLogs.length, ...rows);
       }
@@ -205,9 +207,9 @@ const appLogger = {
 
   /* ── Gestão de Logs ─────────────────────────────────────── */
 
-  async markLogResolved(id) {
+   async markLogResolved(id) {
     try {
-      await db.errorLogs.update(id, { resolved: true });
+      await firestoreDb.collection('errorLogs').doc(id).update({ resolved: true });
       const idx = this.errorLogs.findIndex(l => l.id === id);
       if (idx !== -1) this.errorLogs.splice(idx, 1, { ...this.errorLogs[idx], resolved: true });
     } catch (e) {
@@ -217,8 +219,14 @@ const appLogger = {
 
   async markAllLogsResolved() {
     try {
-      const unresolvedIds = this.errorLogs.filter(l => !l.resolved).map(l => l.id);
-      for (const id of unresolvedIds) await db.errorLogs.update(id, { resolved: true });
+      const unresolved = this.errorLogs.filter(l => !l.resolved);
+      // Batch para atomicidade
+      const batch = firestoreDb.batch();
+      unresolved.forEach(l => {
+        batch.update(firestoreDb.collection('errorLogs').doc(l.id), { resolved: true });
+      });
+      await batch.commit();
+
       this.errorLogs.forEach((l, i) => {
         if (!l.resolved) this.errorLogs.splice(i, 1, { ...l, resolved: true });
       });
@@ -228,9 +236,9 @@ const appLogger = {
     }
   },
 
-  async deleteLog(id) {
+   async deleteLog(id) {
     try {
-      await db.errorLogs.delete(id);
+      await firestoreDb.collection('errorLogs').doc(id).delete();
       const idx = this.errorLogs.findIndex(l => l.id === id);
       if (idx !== -1) this.errorLogs.splice(idx, 1);
     } catch (e) {
@@ -238,9 +246,16 @@ const appLogger = {
     }
   },
 
-  async clearAllLogs() {
+   async clearAllLogs() {
     try {
-      await db.errorLogs.clear();
+      // Deleta em batch (respeita limite de 450/batch)
+      const snap  = await firestoreDb.collection('errorLogs').get();
+      const CHUNK = 450;
+      for (let i = 0; i < snap.docs.length; i += CHUNK) {
+        const batch = firestoreDb.batch();
+        snap.docs.slice(i, i + CHUNK).forEach(d => batch.delete(d.ref));
+        await batch.commit();
+      }
       this.errorLogs.splice(0);
       this.logClearConfirm = false;
       this.showToast('Todos os logs apagados.', 'success', '🗑️');
