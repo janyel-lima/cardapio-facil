@@ -7,10 +7,6 @@ const appState = {
   selectedPromoFilter: null,
   viewMode : 'grid',
   loginEmail: '',
-otpSent: false,
-otpCode: '',
-otpLoading: false,
-loginError: '',
 
   pixStatus: 'pending', pixCopied: false, pixCountdown: 300, _pixTimer: null,
   selectedProduct: null, modalQty: 1, modalNote: '', modalSelectedComplements: {},

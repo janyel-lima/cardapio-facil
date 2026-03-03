@@ -12,6 +12,8 @@ const appAuth = {
   cloudLoginOtp:    '',
   cloudLoginStep:   'email',  // 'email' | 'otp' | 'done'
   cloudLoginError:  '',
+  cloudOtpSent: false,
+  
 
   // ── Roles derivadas (getters) ──────────────────
   get isCloudAdmin() {

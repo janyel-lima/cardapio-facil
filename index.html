@@ -2491,45 +2491,45 @@
         x-transition:enter-end="scale-100 opacity-100">
 
         <!-- Etapa 1: email -->
-        <div x-show="!otpSent">
+        <div x-show="!cloudOtpSent">
             <h3 class="font-display font-bold text-text-primary text-xl mb-1">🔒 Área Admin</h3>
             <p class="text-sm text-text-muted mb-5">Digite seu email para receber o código de acesso</p>
 
-            <input type="email" x-model="loginEmail" placeholder="seu@email.com"
+            <input type="email" x-model="cloudLoginEmail" placeholder="seu@email.com"
                 @keyup.enter="cloudSendOtp()"
                 class="form-input w-full mb-3">
 
-            <p x-show="loginError" class="text-red-500 text-xs mb-3" x-text="loginError"></p>
+            <p x-show="cloudLoginError" class="text-red-500 text-xs mb-3" x-text="cloudLoginError"></p>
 
-            <button @click="cloudSendOtp()" :disabled="otpLoading"
+            <button @click="cloudSendOtp()" :disabled="cloudSyncing"
                 class="w-full py-3 rounded-2xl font-bold text-white disabled:opacity-50"
                 :style="'background:var(--accent)'">
-                <span x-show="!otpLoading">Enviar código</span>
-                <span x-show="otpLoading">Enviando...</span>
+                <span x-show="!cloudSyncing">Enviar código</span>
+                <span x-show="cloudSyncing">Enviando...</span>
             </button>
         </div>
 
         <!-- Etapa 2: código OTP -->
-        <div x-show="otpSent">
+        <div x-show="cloudOtpSent">
             <h3 class="font-display font-bold text-text-primary text-xl mb-1">📧 Código enviado</h3>
             <p class="text-sm text-text-muted mb-1">Verifique o email:</p>
-            <p class="text-sm font-bold text-accent mb-5" x-text="loginEmail"></p>
+            <p class="text-sm font-bold text-accent mb-5" x-text="cloudLoginEmail"></p>
 
-            <input type="text" x-model="otpCode" placeholder="000000"
+            <input type="text" x-model="cloudLoginOtp" placeholder="000000"
                 maxlength="6" inputmode="numeric"
                 @keyup.enter="cloudConfirmOtp()"
                 class="form-input w-full mb-3 text-center text-2xl font-mono tracking-widest">
 
-            <p x-show="loginError" class="text-red-500 text-xs mb-3" x-text="loginError"></p>
+            <p x-show="cloudLoginError" class="text-red-500 text-xs mb-3" x-text="cloudLoginError"></p>
 
-            <button @click="cloudConfirmOtp()" :disabled="otpLoading"
+            <button @click="cloudConfirmOtp()" :disabled="cloudSyncing"
                 class="w-full py-3 rounded-2xl font-bold text-white disabled:opacity-50 mb-3"
                 :style="'background:var(--accent)'">
-                <span x-show="!otpLoading">Entrar</span>
-                <span x-show="otpLoading">Verificando...</span>
+                <span x-show="!cloudSyncing">Entrar</span>
+                <span x-show="cloudSyncing">Verificando...</span>
             </button>
 
-            <button @click="otpSent=false; loginError=''"
+            <button @click="cloudOtpSent=false; cloudLoginError=''"
                 class="w-full py-2 text-sm text-text-muted hover:text-text-primary">
                 ← Usar outro email
             </button>
