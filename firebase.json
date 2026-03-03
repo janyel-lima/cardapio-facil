@@ -1,5 +1,12 @@
 {
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "auth": {
+    "signInOptions": ["EMAIL_PASSWORD", "EMAIL_LINK"]
+  },
   "emulators": {
+    
     "singleProjectMode": true,
     "auth": {
       "port": 9099
@@ -9,7 +16,7 @@
     },
     "ui": {
       "enabled": true,
-      "port": 3000
+      "port": 4000
     }
   }
 }

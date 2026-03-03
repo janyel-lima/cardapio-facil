@@ -69,6 +69,6 @@ node_modules/
 .dataconnect
 
 # Firebase — nunca commitar
-firescripts/*
+firescripts/manage-roles.js
 
 .firebaserc

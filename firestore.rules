@@ -1,0 +1,104 @@
+rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════════════════
+//   CARDÁPIO DIGITAL PRO — firestore.rules
+//
+//   Modelo de segurança:
+//     • Cardápio (categorias, itens, promoções, config): leitura pública,
+//       escrita restrita a admins.
+//     • Pedidos: qualquer pessoa pode criar (clientes), admins/workers
+//       podem ler e atualizar status.
+//     • AuditLog: somente admins.
+//     • ErrorLogs: qualquer um escreve (captura de erros), admins/workers
+//       leem e gerenciam.
+//     • Users: cada usuário lê o próprio doc; admin gerencia todos.
+// ═══════════════════════════════════════════════════════════════════════════
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    function isAuthed() {
+      return request.auth != null;
+    }
+
+    // Busca o documento /users/{uid} do usuário autenticado.
+    // Necessário para verificar roles sem Custom Claims.
+    function userRole() {
+      return isAuthed()
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '')
+        : '';
+    }
+
+    function isAdmin()  { return userRole() == 'admin'; }
+    function isWorker() { return userRole() == 'admin' || userRole() == 'worker'; }
+
+
+    // ── Config ────────────────────────────────────────────────────────────────
+    match /config/{doc} {
+      allow read:  if true;          // cardápio público precisa da config
+      allow write: if isAdmin();
+    }
+
+    // ── Meta (orderCounter) ───────────────────────────────────────────────────
+    match /meta/{doc} {
+      allow read:  if true;
+      allow write: if isWorker();
+    }
+
+    // ── Categorias ────────────────────────────────────────────────────────────
+    match /categories/{id} {
+      allow read:  if true;
+      allow write: if isAdmin();
+    }
+
+    // ── Produtos ──────────────────────────────────────────────────────────────
+    match /items/{id} {
+      allow read:  if true;
+      allow write: if isAdmin();
+    }
+
+    // ── Promoções ─────────────────────────────────────────────────────────────
+    match /promotions/{id} {
+      allow read:  if true;
+      allow write: if isAdmin();
+    }
+
+    // ── Pedidos ───────────────────────────────────────────────────────────────
+    // Clientes criam pedidos sem autenticação (checkout público).
+    // Workers/admins leem, atualizam status e deletam (limpeza de histórico).
+    match /orders/{orderId} {
+      allow create: if true;         // checkout público
+      allow read:   if isWorker();
+      allow update: if isWorker();
+      allow delete: if isAdmin();    // apenas admin pode apagar histórico
+    }
+
+    // ── Audit Log ─────────────────────────────────────────────────────────────
+    match /auditLog/{id} {
+      allow read:   if isAdmin();
+      allow create: if isWorker();   // admins e workers geram entradas
+      allow update: if false;        // auditoria é imutável
+      allow delete: if isAdmin();
+    }
+
+    // ── Error Logs ────────────────────────────────────────────────────────────
+    // Qualquer usuário (até anônimo) pode escrever — necessário para capturar
+    // erros do lado do cliente em qualquer contexto.
+    match /errorLogs/{id} {
+      allow read:   if isWorker();
+      allow create: if true;         // captura de erros de clientes
+      allow update: if isWorker();   // marcar como resolvido
+      allow delete: if isAdmin();
+    }
+
+    // ── Users (roles) ─────────────────────────────────────────────────────────
+    match /users/{userId} {
+      // Cada usuário lê e atualiza seu próprio perfil (ex: displayName)
+      allow read:   if isAuthed() && (request.auth.uid == userId || isAdmin());
+      // Somente admin define/altera roles
+      allow write:  if isAdmin();
+    }
+  }
+}

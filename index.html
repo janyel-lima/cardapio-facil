@@ -4030,6 +4030,118 @@
         });
     </script>
 
+    <!-- DEV TOOLBAR — invisível em produção -->
+
+<template x-if="$store?.env?.isDev ?? window.APP_ENV?.isDev">
+  <div class="fixed bottom-4 right-4 z-[999]"
+       x-data="{ open: false }"
+       @click.outside="open = false">
+
+    <!-- Toggle -->
+    <button @click="open = !open"
+            class="w-10 h-10 rounded-2xl shadow-lg flex items-center justify-center
+                   transition-all duration-200 hover:scale-110 active:scale-90"
+            :style="`
+              background: var(--surface-card);
+              border: 1px solid var(--border);
+              color: var(--accent);
+              box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 18%, transparent);
+            `"
+            title="Dev Tools">
+      🛠️
+    </button>
+
+    <!-- Painel -->
+    <div x-show="open"
+         x-transition:enter="transition ease-out duration-150"
+         x-transition:enter-start="opacity-0 scale-95 translate-y-2"
+         x-transition:enter-end="opacity-100 scale-100 translate-y-0"
+         class="absolute bottom-12 right-0 w-60 rounded-2xl overflow-hidden"
+         :style="`
+           background: var(--surface-card);
+           border: 1px solid var(--border);
+           box-shadow: 0 20px 40px rgba(0,0,0,.15),
+                       0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent);
+           color: var(--text-primary);
+         `">
+
+      <!-- Header -->
+      <div class="px-3 py-2.5 flex items-center gap-2"
+           :style="`background: var(--surface-muted); border-bottom: 1px solid var(--border)`">
+
+        <span class="dev-dot w-2 h-2 rounded-full flex-shrink-0"
+              :style="cloudUser?.isLoggedIn
+                ? 'background:var(--accent)'
+                : 'background:#64748b'"></span>
+
+        <div class="flex-1 min-w-0">
+          <p class="text-[10px] font-mono font-bold truncate"
+             style="color:var(--text-primary)"
+             x-text="cloudUser?.email ?? 'nenhum'"></p>
+          <p class="text-[9px] font-mono"
+             style="color:var(--text-muted)"
+             x-text="'roles: ' + (cloudUser?.roles?.join(', ') ?? '—')"></p>
+        </div>
+
+        <span class="text-[8px] font-black px-1.5 py-0.5 rounded-md flex-shrink-0 tracking-widest"
+              style="background:color-mix(in srgb,var(--accent) 15%,transparent);
+                     color:var(--accent)">DEV</span>
+      </div>
+
+      <!-- Quick login buttons -->
+      <div class="p-2.5 space-y-1">
+        <p class="text-[9px] font-bold uppercase tracking-widest px-1 mb-1.5"
+           style="color:var(--text-muted)">Login rápido (emulador)</p>
+
+        <template x-for="mock in [
+          { label: '👑 Admin',   email: 'admin@test.com'   },
+          { label: '🧑‍💼 Worker', email: 'worker@test.com'  },
+          { label: '🙋 Cliente', email: 'cliente@test.com' },
+        ]" :key="mock.email">
+          <button
+            @click="_devQuickLogin(mock.email)"
+            class="dev-mock-btn w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-semibold
+                   flex items-center justify-between gap-2"
+            :style="cloudUser?.email === mock.email
+              ? `background: color-mix(in srgb, var(--accent) 12%, var(--surface-muted));
+                 border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+                 color: var(--accent);`
+              : `background: var(--surface-muted);
+                 border: 1px solid var(--border);
+                 color: var(--text-primary);`">
+            <span x-text="mock.label"></span>
+            <span x-show="cloudUser?.email === mock.email"
+                  class="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                  style="background:var(--accent)"></span>
+          </button>
+        </template>
+
+        <!-- Logout rápido -->
+        <div class="pt-1.5 mt-1" :style="`border-top: 1px solid var(--border)`">
+          <p class="text-[9px] font-bold uppercase tracking-widest px-1 mb-1.5 mt-1"
+             style="color:var(--text-muted)">Logout rápido</p>
+
+          <button
+            x-show="isCloudAuthenticated"
+            @click="cloudLogout(); open = false"
+            class="dev-mock-btn w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-semibold"
+            style="background:rgba(239,68,68,.07);
+                   border:1px solid rgba(239,68,68,.2);
+                   color:#ef4444">
+            🚪 Logout
+          </button>
+
+          <p x-show="!isCloudAuthenticated"
+             class="text-[10px] text-center py-1"
+             style="color:var(--text-muted)">
+            Nenhuma sessão ativa
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</template>
 
 <!-- ══════════════════════════════════════════════
      LOGIN NUDGE — aparece 3s após carregar para

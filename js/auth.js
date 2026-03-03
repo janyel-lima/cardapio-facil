@@ -197,6 +197,10 @@ const appAuth = {
       this._loadUserProfile?.();
       this.showLoginNudge    = false;
 
+      // Carrega dados protegidos agora que roles estão definidas
+      // (orders para worker/admin, auditLog para admin)
+      await this.loadProtectedData?.();
+
       // Abre painel se havia intenção pendente E o usuário tem a role
       if (this._pendingPanelOpen) {
         this._pendingPanelOpen = false;
@@ -210,6 +214,41 @@ const appAuth = {
         this.showAdminPanel = false;
       }
     });
+  },
+
+
+  // ── Dev: Login rápido via Firebase Auth Emulator ──────────────────────────
+  // Usado EXCLUSIVAMENTE pelo Dev Toolbar (APP_ENV.isDev).
+  //
+  // Usa signInWithEmailAndPassword (muito mais simples que Email Link)
+  // porque o seed-emulator.js cria os usuários com senha determinística.
+  //
+  // Senhas dos usuários de teste (definidas em scripts/seed-emulator.js):
+  //   admin@test.com   → admin123
+  //   worker@test.com  → worker123
+  //   cliente@test.com → cliente123
+  async _devQuickLogin(email) {
+    if (!window.APP_ENV?.isDev) return;
+
+    // Deriva a senha a partir do prefixo do e-mail (ex: "admin" → "admin123")
+    const prefix   = email.split('@')[0];
+    const password = `${prefix}123`;
+
+    try {
+      this.cloudSyncing      = true;
+      this._pendingPanelOpen = true;
+      await firebaseAuth.signInWithEmailAndPassword(email, password);
+      // onAuthStateChanged → loadProtectedData() → abre painel se admin/worker
+    } catch (e) {
+      this._pendingPanelOpen = false;
+      const msg = e.code === 'auth/user-not-found' || e.code === 'auth/wrong-password'
+        ? `Usuário não encontrado no emulador. Rode: node scripts/seed-emulator.js`
+        : e.message;
+      this.showToast?.('Dev login falhou: ' + msg, 'error', '🔴');
+      console.error('[dev] _devQuickLogin falhou:', e.code, msg);
+    } finally {
+      this.cloudSyncing = false;
+    }
   },
 
 
