@@ -53,6 +53,16 @@ function menuApp() {
       // ── Carrega dados do Banco (Dexie) ────────────────────────────────────
       await this.loadAllData();
       this._initCloudAuth(); 
+
+      // Nudge: aparece 3s após carregar, só para não autenticados
+setTimeout(() => {
+  if (!this.isCloudAuthenticated && !this.loginNudgeDismissed) {
+    this.showLoginNudge = true;
+  }
+}, 3000);
+
+// Carrega perfil salvo do localStorage
+this._loadUserProfile();
       // ── Alpine Watchers ───────────────────────────────────────────────────
       //
       // Usamos JSON diff para detectar mutações profundas (push/splice) sem

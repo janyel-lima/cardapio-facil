@@ -1,13 +1,50 @@
 const appState = {
   darkMode: false, showSearch: false, searchQuery: '', activeTab: null,
   showCart: false, showProductModal: false, showThemePicker: false,
-  showAdminLogin: false, showAdminPanel: false, showProductForm: false,
+  showAdminLogin: false, showProductForm: false,
   showPixModal: false, showTutorial: false, tutorialStep: 0, dbReady: false,
 
   selectedPromoFilter: null,
   viewMode : 'grid',
   loginEmail: '',
+  showClientLogin: false,
 
+
+  // Adicione ao objeto de estado principal
+showUserProfile:        false,
+userProfileTab:         'profile',   // 'profile' | 'orders' | 'account'
+loginNudgeDismissed:    false,
+showLoginNudge:         false,       // controlado por timer em init()
+
+// Perfil editável do usuário (salvo em localStorage por userId)
+userProfile: {
+  displayName: '',
+  phone:       '',
+},
+
+// ── Getter: pedidos do cliente atual ──────────────────────
+get myOrders() {
+  if (!this.isCloudAuthenticated) return [];
+  // Filtra pelo userId do Dexie Cloud
+  return (this.orderHistory || [])
+    .filter(o => o.ownerId === this.cloudUser?.userId || o.clientEmail === this.cloudUser?.email)
+    .slice()
+    .reverse();
+},
+
+// ── Getter: inicial do avatar ─────────────────────────────
+get userAvatarInitial() {
+  const name = this.userProfile.displayName || this.cloudUser?.email || '?';
+  return name.charAt(0).toUpperCase();
+},
+
+// ── Getter: label curto da role ───────────────────────────
+get userRoleLabel() {
+  if (this.isCloudAdmin)  return { text: 'Admin',     color: '#ef4444', bg: 'rgba(239,68,68,.12)'  };
+  if (this.isCloudWorker) return { text: 'Atendente', color: '#f59e0b', bg: 'rgba(245,158,11,.12)' };
+  if (this.isCloudClient) return { text: 'Cliente',   color: '#3b82f6', bg: 'rgba(59,130,246,.12)' };
+  return null;
+},
   pixStatus: 'pending', pixCopied: false, pixCountdown: 300, _pixTimer: null,
   selectedProduct: null, modalQty: 1, modalNote: '', modalSelectedComplements: {},
 
@@ -16,16 +53,26 @@ const appState = {
   couponInput: '', appliedCoupon: null,
 
   isAdmin: false, adminTab: 'store',
-  adminTabs: [
-  { id: 'store',         name: 'Loja',                icon: '🏪' },
-  { id: 'categories',    name: 'Categorias',           icon: '🏷️' },
-  { id: 'products',      name: 'Produtos',             icon: '🛍️' },
-  { id: 'promos',        name: 'Promoções',            icon: '🔥' },
-  { id: 'order-manager', name: 'Gestor Pedidos',    icon: '⚙️' },
-  { id: 'orders',        name: 'Histórico Pedidos', icon: '📋' },
-  { id: 'reports',       name: 'Relatórios',           icon: '📊' },
-  { id: 'syslogs',       name: 'Sys Logs',             icon: '🪲' }, // ← NOVO
-],
+  get adminTabs() {
+  const all = [
+    { id: 'store',         icon: '🏪', name: 'Loja'       },
+    { id: 'categories',    icon: '🏷️', name: 'Categorias' },
+    { id: 'products',      icon: '🛍️', name: 'Produtos'   },
+    { id: 'promos',        icon: '🔥', name: 'Promoções'  },
+    { id: 'order-manager', icon: '⚙️', name: 'Pedidos'    },
+    { id: 'orders',        icon: '📋', name: 'Histórico'  },
+    { id: 'reports',       icon: '📊', name: 'Relatórios' },
+    { id: 'syslogs',       icon: '🪲', name: 'Logs'       },
+  ];
+
+  if (this.isCloudAdmin) return all;
+
+  if (this.isCloudWorker) {
+    return all.filter(t => ['order-manager', 'orders'].includes(t.id));
+  }
+
+  return [];
+},
 
   editingProduct: {},
   newGroup:       { name: '', type: 'multiple', required: false, min: 0, max: 3, options: [] },
@@ -505,4 +552,22 @@ _logSessionErrors: 0,
       value: 5.10, minOrder: 0, expiresAt: '', active: true,
     },
   ],
+
+  // ── Perfil do usuário: carrega/salva por userId ──────────────────
+_loadUserProfile() {
+  const uid = this.cloudUser?.userId;
+  if (!uid) return;
+  try {
+    const saved = localStorage.getItem(`userProfile:${uid}`);
+    if (saved) Object.assign(this.userProfile, JSON.parse(saved));
+  } catch { /* JSON inválido — ignora */ }
+},
+
+_saveUserProfile() {
+  const uid = this.cloudUser?.userId;
+  if (!uid) return;
+  try {
+    localStorage.setItem(`userProfile:${uid}`, JSON.stringify(this.userProfile));
+  } catch { /* quota excedida — ignora */ }
+},
 };

@@ -3,76 +3,119 @@
    Autenticação via Dexie Cloud (OTP email)
 ═══════════════════════════════════════════════════ */
 
+function _resolveCloud() {
+  if (window.APP_ENV?.isDev && window.mockCloud) return window.mockCloud;
+  return db.cloud;
+}
+
 const appAuth = {
 
   // ── Estado reativo ─────────────────────────────
-  cloudUser:        null,   // objeto DexieCloudUser corrente
+  cloudUser:        null,
   cloudSyncing:     false,
   cloudLoginEmail:  '',
   cloudLoginOtp:    '',
   cloudLoginStep:   'email',  // 'email' | 'otp' | 'done'
   cloudLoginError:  '',
-  cloudOtpSent: false,
-  
+  cloudOtpSent:     false,
+  showAdminLogin:   false,
+  showAdminPanel:   false,
 
-  // ── Roles derivadas (getters) ──────────────────
+  // Flag interna: sinaliza ao subscriber para abrir o painel
+  // caso o usuário logado seja admin ou worker.
+  // Evita race condition onde cloudConfirmOtp() checa roles
+  // antes do subscriber atualizar cloudUser.
+  _pendingPanelOpen: false,
+
+
+  // ── Roles derivadas — SEMPRE com guarda ────────
+  get isCloudAuthenticated() {
+    return !!this.cloudUser && this.cloudUser.isLoggedIn === true;
+  },
+
   get isCloudAdmin() {
+    if (!this.isCloudAuthenticated) return false;
     return this.cloudUser?.roles?.includes('admin') ?? false;
   },
 
   get isCloudWorker() {
+    if (!this.isCloudAuthenticated) return false;
     return this.cloudUser?.roles?.includes('worker') ?? false;
   },
 
-  get isCloudAuthenticated() {
-    return !!this.cloudUser && !this.cloudUser.isLoggedIn === false;
+  get isCloudClient() {
+    if (!this.isCloudAuthenticated) return false;
+    return this.cloudUser?.roles?.includes('client') ?? false;
   },
 
-  // ── Inicializa subscriber ao currentUser ───────
-  // Chamado dentro de init() do app.js, após loadAllData().
+
+  // ── Subscriber ─────────────────────────────────
+  // Única fonte de verdade para abrir/fechar o painel.
+  // cloudConfirmOtp() apenas levanta a flag _pendingPanelOpen;
+  // a decisão real acontece aqui, com cloudUser já atualizado.
   _initCloudAuth() {
-    db.cloud.currentUser.subscribe(user => {
+    const cloud = _resolveCloud();
+
+    cloud.currentUser.subscribe(user => {
       this.cloudUser = user ?? null;
-      
-      // Quando a sessão for confirmada e o usuário estiver logado:
-      if (this.isCloudAuthenticated) {
-        this.showAdminLogin = false; // Força o fechamento do modal
-        
-        // Se acabou de validar o OTP com sucesso, abre o painel direto
-        if (this.cloudLoginStep === 'done' && (this.isCloudAdmin || this.isCloudWorker)) {
-          this.showAdminPanel = true;
-          this.cloudLoginStep = 'email'; // Reseta a etapa silenciosamente para o futuro
+
+      if (!this.isCloudAuthenticated) {
+        // Sessão encerrada ou expirada — fecha tudo
+        this.showAdminPanel    = false;
+        this.showAdminLogin    = false;
+        this.showClientLogin   = false;
+        this._pendingPanelOpen = false;
+
+      } else {
+        // Autenticado — fecha modais de login sempre
+        this.showAdminLogin  = false;
+        this.showClientLogin = false;
+        this._loadUserProfile();
+        this.showLoginNudge = false;
+
+        // Abre o painel somente se:
+        //   (a) havia uma intenção pendente de abrir (login recém-feito), E
+        //   (b) o usuário realmente tem a role adequada
+        if (this._pendingPanelOpen) {
+          this._pendingPanelOpen = false;
+         
+          // Clientes: não abre o painel — apenas logou normalmente
+        }
+
+        // Se o painel está aberto mas o usuário perdeu a role
+        // (ex: rebaixado remotamente), fecha o painel.
+        if (this.showAdminPanel && !this.isCloudAdmin && !this.isCloudWorker) {
+          this.showAdminPanel = false;
         }
       }
     });
-
-    db.cloud.syncState.subscribe(state => {
-      this.cloudSyncing = state?.phase === 'pushing' || state?.phase === 'pulling';
-    });
   },
 
-  // ── Login: passo 1 — envia OTP para o email ────
+
+  // ── Login Passo 1 — envia o OTP ────────────────
   async cloudSendOtp() {
     if (!this.cloudLoginEmail.trim()) {
-      this.cloudLoginError = 'Informe seu e-mail.';
+      this.cloudLoginError = 'Digite seu e-mail.';
       return;
     }
     try {
       this.cloudLoginError = '';
-      await db.cloud.login({ email: this.cloudLoginEmail.trim() });
+      this.cloudSyncing    = true;
+
+      await _resolveCloud().login({ email: this.cloudLoginEmail.trim() });
+
       this.cloudLoginStep = 'otp';
-      this.logInfo('OTP enviado para login cloud', {
-        source: 'cloudSendOtp', type: 'authOtpSent',
-      }, 'auth');
+      this.cloudOtpSent   = true;
+
     } catch (e) {
-      this.cloudLoginError = 'Erro ao enviar código. Tente novamente.';
-      await this.logError(e.message || String(e), {
-        source: 'cloudSendOtp', type: 'authError', stack: e.stack || null,
-      }, 'auth');
+      this.cloudLoginError = e.message || 'Falha ao enviar código. Tente novamente.';
+    } finally {
+      this.cloudSyncing = false;
     }
   },
 
-  // ── Login: passo 2 — confirma o OTP ───────────
+
+  // ── Login Passo 2 — confirma o OTP ────────────
   async cloudConfirmOtp() {
     if (!this.cloudLoginOtp.trim()) {
       this.cloudLoginError = 'Digite o código recebido por e-mail.';
@@ -80,35 +123,42 @@ const appAuth = {
     }
     try {
       this.cloudLoginError = '';
-      await db.cloud.login({ otp: this.cloudLoginOtp.trim() });
+      this.cloudSyncing    = true;
+
+      // Sinaliza ANTES do await: o subscriber pode disparar
+      // de forma síncrona durante login() em alguns ambientes (ex: mock).
+      // Colocar a flag antes garante que ela esteja levantada
+      // quando o subscriber rodar, independentemente do timing.
+      this._pendingPanelOpen = true;
+
+      await _resolveCloud().login({ otp: this.cloudLoginOtp.trim() });
+
       this.cloudLoginStep  = 'done';
       this.cloudLoginEmail = '';
       this.cloudLoginOtp   = '';
-      this.showAdminLogin  = false;
-      this.showAdminPanel  = this.isCloudAdmin || this.isCloudWorker;
-      this.logInfo('Login cloud confirmado', {
-        source: 'cloudConfirmOtp', type: 'authSuccess', userId: this.cloudUser?.userId,
-      }, 'auth');
+
+      // Nota: NÃO verificamos isCloudAdmin/isCloudWorker aqui.
+      // O subscriber (_initCloudAuth) é responsável por abrir o painel
+      // com cloudUser já atualizado. Se o subscriber já disparou
+      // de forma síncrona durante login(), a flag já foi consumida
+      // e _pendingPanelOpen já é false aqui — sem duplicidade.
+
     } catch (e) {
-      this.cloudLoginError = 'Código inválido ou expirado.';
-      await this.logError(e.message || String(e), {
-        source: 'cloudConfirmOtp', type: 'authOtpError', stack: e.stack || null,
-      }, 'auth');
+      this._pendingPanelOpen = false; // limpa flag se login falhou
+      this.cloudLoginError = e.message || 'Código inválido ou expirado.';
+    } finally {
+      this.cloudSyncing = false;
     }
   },
+
 
   // ── Logout ─────────────────────────────────────
   async cloudLogout() {
     try {
-      this.logInfo('Logout cloud', {
-        source: 'cloudLogout', type: 'authLogout', userId: this.cloudUser?.userId,
-      }, 'auth');
-      await db.cloud.logout();
-      this.showAdminPanel = false;
-      this.cloudLoginStep = 'email';
-      this.showToast('Sessão encerrada', 'success', '🔒');
+      await _resolveCloud().logout();
+      // Subscriber cuida do reset da UI
     } catch (e) {
-      await this.logError(e.message || String(e), {
+      await this.logError?.(e.message || String(e), {
         source: 'cloudLogout', type: 'authError', stack: e.stack || null,
       }, 'auth');
     }
