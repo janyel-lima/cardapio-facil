@@ -5,7 +5,7 @@
 
 const APP_ENV = {
   // Troque para 'production' antes de fazer deploy
-  mode: 'development',
+  mode: 'production',
 
   get isDev()  { return this.mode === 'development'; },
   get isProd() { return this.mode === 'production';  },
