@@ -45,19 +45,30 @@ const appUtils = {
 
   showToast(message, type = 'success', icon = '✓') {
     clearTimeout(this._toastTimer);
-    this.toast      = { visible: true, message, type, icon };
+    this.toast       = { visible: true, message, type, icon };
     this._toastTimer = setTimeout(() => { this.toast.visible = false; }, 2800);
   },
 
   saveSetting(key, value) {
-    try { localStorage.setItem('menuSetting_' + key, JSON.stringify(value)); } catch (e) { /* ignore */ }
+    try {
+      localStorage.setItem('menuSetting_' + key, JSON.stringify(value));
+    } catch (e) {
+      this.logWarn('localStorage indisponível — configuração não persistida', {
+        source: 'saveSetting', type: 'storageError', key, error: e.message,
+      }, 'utils');
+    }
   },
 
   loadSetting(key, fallback) {
     try {
       const val = localStorage.getItem('menuSetting_' + key);
       return val !== null ? JSON.parse(val) : fallback;
-    } catch (e) { return fallback; }
+    } catch (e) {
+      this.logWarn('Falha ao carregar configuração do localStorage — usando fallback', {
+        source: 'loadSetting', type: 'storageError', key, error: e.message,
+      }, 'utils');
+      return fallback;
+    }
   },
 
   setTheme(theme) {
@@ -67,7 +78,7 @@ const appUtils = {
     document.documentElement.style.setProperty('--accent-hover', theme.hover);
     document.documentElement.style.setProperty('--accent-rgb',   theme.rgb);
     document.documentElement.style.setProperty('--accent-light', `rgba(${theme.rgb}, 0.12)`);
-    this.saveSetting('theme',       theme.id);
+    this.saveSetting('theme',        theme.id);
     this.saveSetting('customAccent', theme.accent);
   },
 

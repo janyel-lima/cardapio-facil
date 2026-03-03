@@ -157,7 +157,7 @@ const appTracking = {
       }
 
       // Atualiza a view de rastreamento do cliente
-      this.trackingOrder     = { ...updated };
+      this.trackingOrder      = { ...updated };
       this.trackingStatusNote = '';
 
       // FIX: sincroniza também com o Gestor de Pedidos (order-manager.js)
@@ -174,7 +174,10 @@ const appTracking = {
 
       this.showToast(`Status: ${statusInfo.label} ${statusInfo.emoji}`, 'success', statusInfo.emoji);
     } catch (e) {
-      console.error('[updateOrderStatus] Erro:', e);
+      await this.logError(e.message || String(e), {
+        stack: e.stack || null, source: 'updateOrderStatus', type: 'trackingError',
+        orderNumber: order?.orderNumber || null, newStatus,
+      }, 'tracking');
       this.showToast('Erro ao atualizar status do pedido.', 'error', '❌');
     }
   },
@@ -194,6 +197,13 @@ const appTracking = {
     } else {
       msg += `Gostaria de falar sobre um pedido.`;
     }
+
+    this.logInfo('Cliente abriu contato WhatsApp com a loja', {
+      source:      'contactStoreWhatsApp',
+      type:        'clientContact',
+      orderNumber: this.trackingOrder?.orderNumber || null,
+      orderUuid:   this.trackingOrder?.uuid        || null,
+    }, 'tracking');
 
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
   },

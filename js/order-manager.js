@@ -385,6 +385,15 @@ const appOrderManager = {
       order.currentStatus === 'cancelled'        ? `❌ Pedido cancelado. Entre em contato.` : '',
     ].filter(Boolean).join('\n');
 
+    this.logInfo('Notificação WhatsApp disparada para cliente', {
+      source:      'omNotifyClient',
+      type:        'clientNotification',
+      orderNumber: order.orderNumber,
+      orderUuid:   order.uuid,
+      status:      order.currentStatus ?? 'paid',
+      customMsg:   !!customMsg,
+    }, 'order-manager');
+
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(defaultMsg)}`, '_blank');
   },
 
@@ -416,7 +425,13 @@ const appOrderManager = {
         });
 
         this.omLastCount = fresh.length;
-      } catch (e) { /* polling silencioso — falhas transitórias ignoradas */ }
+      } catch (e) {
+        // Falhas transitórias de polling não devem interromper o ciclo,
+        // mas são registradas como warn para diagnóstico.
+        this.logWarn(e.message || String(e), {
+          source: '_omStartPolling', type: 'pollingError', stack: e.stack || null,
+        }, 'order-manager');
+      }
     }, 8000);
   },
 
@@ -436,7 +451,11 @@ const appOrderManager = {
         osc.start(ctx.currentTime + when);
         osc.stop(ctx.currentTime  + when + 0.18);
       });
-    } catch (e) { /* AudioContext indisponível */ }
+    } catch (e) {
+      this.logWarn('AudioContext indisponível — alerta sonoro não reproduzido', {
+        source: '_omPlayAlert', type: 'audioError', error: e.message,
+      }, 'order-manager');
+    }
   },
 
   /* ── Tempo decorrido ───────────────────────────────────────── */

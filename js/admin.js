@@ -6,132 +6,15 @@ const appAdmin = {
   clearHistoryPasswordError:  '',
 
   // ── Segurança ──────────────────────────────────────────────────────────────
-  get isLockedOut() {
-    if (!this.lockedUntil) return false;
-    if (Date.now() >= this.lockedUntil) {
-      this.lockedUntil    = null;
-      this.failedAttempts = 0;
-      this._saveSecurityState();
-      return false;
-    }
-    return true;
-  },
-  get lockoutRemaining() {
-    return !this.lockedUntil ? 0 : Math.max(0, Math.ceil((this.lockedUntil - Date.now()) / 1000));
-  },
-  get lockoutRemainingFormatted() {
-    const s = this.lockoutRemaining;
-    return `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
-  },
+  
 
-  loginAdmin() {
-    if (this.isLockedOut) {
-      this.adminError = `Conta bloqueada. Aguarde ${this.lockoutRemainingFormatted}.`;
-      return;
-    }
-    if (this.adminPassword === this.config.adminPass) {
-      this.isAdmin       = true;
-      this.adminError    = '';
-      this.failedAttempts = 0;
-      this.sessionId     = this.uuid();
-      this.sessionExpiry = Date.now() + this.SECURITY_SESSION_MS;
-      this._saveSecurityState();
-      this._saveSession();
-      this._startSessionTimer();
-      this.adminPassword   = '';
-      this.showAdminLogin  = false;
-      this.showAdminPanel  = true;
-    } else {
-      this.failedAttempts++;
-      if (this.failedAttempts >= this.SECURITY_MAX_ATTEMPTS) {
-        this.lockedUntil = Date.now() + this.SECURITY_LOCKOUT_MS;
-        this._saveSecurityState();
-        this.adminError = `Muitas tentativas. Conta bloqueada por 15 minutos.`;
-      } else {
-        this.adminError = `Senha incorreta. ${this.SECURITY_MAX_ATTEMPTS - this.failedAttempts} tentativa(s) restante(s).`;
-      }
-    }
-  },
+  
 
-  logoutAdmin() {
-    this._clearSession();
-    this.isAdmin       = false;
-    this.showAdminPanel = false;
-    this.showToast('Sessão encerrada com segurança', 'success', '🔒');
-  },
+  
 
-  _saveSession() {
-    try {
-      sessionStorage.setItem('adminSession', JSON.stringify({
-        sessionId: this.sessionId,
-        expiry:    this.sessionExpiry,
-      }));
-    } catch (e) { /* storage unavailable */ }
-  },
+  
 
-  _clearSession() {
-    this.sessionId            = null;
-    this.sessionExpiry        = null;
-    this.sessionCountdownLabel = '';
-    clearInterval(this._sessionTimer);
-    try { sessionStorage.removeItem('adminSession'); } catch (e) { /* ignore */ }
-  },
-
-  _loadSession() {
-    try {
-      const raw = sessionStorage.getItem('adminSession');
-      if (!raw) return false;
-      const { sessionId, expiry } = JSON.parse(raw);
-      if (Date.now() < expiry) {
-        this.sessionId     = sessionId;
-        this.sessionExpiry = expiry;
-        this.isAdmin       = true;
-        this._startSessionTimer();
-        return true;
-      }
-      sessionStorage.removeItem('adminSession');
-    } catch (e) { /* ignore */ }
-    return false;
-  },
-
-  _startSessionTimer() {
-    clearInterval(this._sessionTimer);
-    this._sessionTimer = setInterval(() => {
-      if (!this.sessionExpiry) return;
-      const remaining = Math.max(0, this.sessionExpiry - Date.now());
-      if (remaining === 0) {
-        this._clearSession();
-        this.isAdmin       = false;
-        this.showAdminPanel = false;
-        this.showToast('Sessão expirada. Faça login novamente.', 'error', '⏰');
-        return;
-      }
-      const h = Math.floor(remaining / 3600000);
-      const m = Math.floor((remaining % 3600000) / 60000);
-      const s = Math.floor((remaining % 60000) / 1000);
-      this.sessionCountdownLabel =
-        `${h > 0 ? h + 'h ' : ''}${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    }, 1000);
-  },
-
-  _saveSecurityState() {
-    try {
-      localStorage.setItem('security_state', JSON.stringify({
-        failedAttempts: this.failedAttempts,
-        lockedUntil:    this.lockedUntil,
-      }));
-    } catch (e) { /* ignore */ }
-  },
-
-  _loadSecurityState() {
-    try {
-      const raw = localStorage.getItem('security_state');
-      if (!raw) return;
-      const { failedAttempts, lockedUntil } = JSON.parse(raw);
-      this.failedAttempts = failedAttempts || 0;
-      this.lockedUntil    = lockedUntil    || null;
-    } catch (e) { /* ignore */ }
-  },
+  
 
   // ── Auditoria ──────────────────────────────────────────────────────────────
   async addAudit(action, data = {}) {
@@ -147,7 +30,7 @@ const appAdmin = {
 
     try {
       if (!Array.isArray(this.auditLog)) {
-        console.warn('[addAudit] auditLog não é array — entrada de auditoria não será encadeada.');
+        this.logWarn('auditLog não é array — entrada de auditoria ignorada', { source: 'addAudit', type: 'auditStateError', action }, 'admin');
         return;
       }
       const lastEntry  = this.auditLog.length > 0 ? this.auditLog[this.auditLog.length - 1] : null;
@@ -159,7 +42,7 @@ const appAdmin = {
       this.auditLog.push(entry);
       await db.auditLog.put(entry);
     } catch (e) {
-      console.error('[addAudit] Erro:', e);
+      await this.logError(e.message || String(e), { stack: e.stack || null, source: 'addAudit', type: 'auditWriteError', action }, 'admin');
     }
   },
 
@@ -223,7 +106,7 @@ const appAdmin = {
       await this.addAudit('CATEGORY_CREATED', { name: cat.name, id: cat.id });
       this.showToast('Categoria adicionada!', 'success', '🏷️');
     } catch (e) {
-      console.error('[addCategory] Erro:', e);
+      await this.logError(e.message || String(e), { stack: e.stack || null, source: 'addCategory', type: 'adminWriteError', categoryName: this.newCategory?.name || null }, 'admin');
       this.showToast('Erro ao adicionar categoria.', 'error', '❌');
     }
   },
@@ -237,7 +120,7 @@ const appAdmin = {
       await this.addAudit('CATEGORY_DELETED', { name: cat.name, id: cat.id });
       this.showToast(`Categoria "${cat.name}" removida.`, 'success', '🗑️');
     } catch (e) {
-      console.error('[deleteCategory] Erro:', e);
+      await this.logError(e.message || String(e), { stack: e.stack || null, source: 'deleteCategory', type: 'adminWriteError' }, 'admin');
       this.showToast('Erro ao excluir categoria.', 'error', '❌');
     }
   },
@@ -281,7 +164,7 @@ const appAdmin = {
         willBeActive ? '✅' : '🔕',
       );
     } catch (e) {
-      console.error('[toggleCategory] Erro:', e);
+      await this.logError(e.message || String(e), { stack: e.stack || null, source: 'toggleCategory', type: 'adminWriteError', catId: cat?.id || null, catName: cat?.name || null }, 'admin');
       this.showToast('Erro ao alterar categoria.', 'error', '❌');
     }
   },
@@ -563,8 +446,8 @@ const appAdmin = {
   },
 
   onEditingPromoChange() {
-    var promoId = Number(this.editingProduct.promoId) || this.editingProduct.promoId;
-    var promo   = promoId ? this.promotions.find(function (p) { return p.id === promoId; }) : null;
+    const promoId = Number(this.editingProduct.promoId) || this.editingProduct.promoId;
+    const promo   = promoId ? this.promotions.find(p => p.id === promoId) : null;
     if (promo && this.editingProduct.price > 0) {
       if (promo.type === 'percentage')
         this.editingProduct.promoPrice = +(this.editingProduct.price * (1 - promo.value / 100)).toFixed(2);
@@ -624,7 +507,7 @@ const appAdmin = {
       await this.addAudit('HISTORY_CLEARED', {});
       this.showToast('Histórico apagado com sucesso', 'success', '🗑️');
     } catch (e) {
-      console.error('[confirmClearHistory] Erro:', e);
+      await this.logError(e.message || String(e), { stack: e.stack || null, source: 'confirmClearHistory', type: 'adminWriteError' }, 'admin');
       this.showToast('Erro ao limpar histórico.', 'error', '❌');
     }
   },
@@ -669,7 +552,7 @@ const appAdmin = {
         rawOrders:   orders,
       };
     } catch (e) {
-      console.error('[todayStats] Erro:', e);
+      this.logError(e.message || String(e), { stack: e.stack || null, source: 'todayStats', type: 'statsComputeError' }, 'admin');
       return {
         date: new Date().toLocaleDateString('pt-BR'),
         orders: 0, revenue: 0, avgTicket: 0,
@@ -714,7 +597,7 @@ const appAdmin = {
         topProducts:  _getTop(all),
       };
     } catch (e) {
-      console.error('[allTimeStats] Erro:', e);
+      this.logError(e.message || String(e), { stack: e.stack || null, source: 'allTimeStats', type: 'statsComputeError' }, 'admin');
       return { totalRevenue: 0, totalOrders: 0, avgTicket: 0, byDate: [], topProducts: [] };
     }
   },
@@ -1004,4 +887,68 @@ const appAdmin = {
       this.showToast('Erro ao registrar fechamento.', 'error', '❌');
     }
   },
+  async setupRestaurantRealm() {
+  try {
+    // Verifica se realm já existe
+    const existing = await db.realms.toArray();
+    if (existing.some(r => r.name === 'Restaurante')) return;
+
+    // Cria o realm compartilhado
+    const realmId = await db.realms.add({
+      name: 'Restaurante',
+    });
+
+    // Associa o catálogo ao realm (visível para workers e admin)
+    await db.transaction('rw', db.categories, db.items, db.promotions, async () => {
+      for (const cat of this.categories) {
+        await db.categories.update(cat.id, { realmId });
+      }
+      for (const item of this.items) {
+        await db.items.update(item.id, { realmId });
+      }
+      for (const promo of this.promotions) {
+        await db.promotions.update(promo.id, { realmId });
+      }
+    });
+
+    // Novos pedidos criados pelos clientes/workers também vão para este realm
+    this._restaurantRealmId = realmId;
+
+    this.logInfo('Realm do restaurante criado', {
+      source: 'setupRestaurantRealm', type: 'realmSetup', realmId,
+    }, 'admin');
+
+    this.showToast('Sync cloud configurado!', 'success', '☁️');
+  } catch (e) {
+    await this.logError(e.message || String(e), {
+      source: 'setupRestaurantRealm', type: 'realmSetupError', stack: e.stack || null,
+    }, 'admin');
+  }
+},
+
+// Convida um worker por email
+async inviteWorker(email) {
+  try {
+    const realmId = this._restaurantRealmId
+      ?? (await db.realms.filter(r => r.name === 'Restaurante').first())?.realmId;
+
+    if (!realmId) {
+      this.showToast('Configure o realm primeiro.', 'error', '⚠️'); return;
+    }
+
+    await db.members.add({
+      realmId,
+      email,
+      roles:  ['worker'],
+      invite: true,  // dispara email de convite
+    });
+
+    this.logInfo('Worker convidado', { source: 'inviteWorker', email, realmId }, 'admin');
+    this.showToast(`Convite enviado para ${email}`, 'success', '📧');
+  } catch (e) {
+    await this.logError(e.message || String(e), {
+      source: 'inviteWorker', type: 'memberInviteError', email, stack: e.stack || null,
+    }, 'admin');
+  }
+},
 };

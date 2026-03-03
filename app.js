@@ -24,53 +24,18 @@ function menuApp() {
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appUtils));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appCart));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appLogger));
+  Object.defineProperties(component, Object.getOwnPropertyDescriptors(appAuth));
+  
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appAdmin));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appTracking));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appOrderManager));
-    Object.defineProperties(component, Object.getOwnPropertyDescriptors(appProductCard));
-    Object.defineProperties(component, Object.getOwnPropertyDescriptors(appPromoFilter));
+  Object.defineProperties(component, Object.getOwnPropertyDescriptors(appProductCard));
+  Object.defineProperties(component, Object.getOwnPropertyDescriptors(appPromoFilter));
+
   
-    // 2. Método de Inicialização (chamado via x-init="init()")
+  // 2. Método de Inicialização (chamado via x-init="init()")
   component.init = async function () {
     try {
-
-        
-const _t = () => new Date().toISOString().slice(11, 23);
-
-// Espera um tick para o Alpine ter inicializado o proxy
-this.$nextTick(() => {
-
-    // Pega o objeto reativo subjacente (raw) via Alpine
-    // Em Alpine 3, this.$data retorna o objeto proxy
-    // Vamos interceptar no próprio `this` do componente
-    let _promoValue = this.promotions;
-
-    Object.defineProperty(this, 'promotions', {
-        configurable: true,
-        enumerable: true,
-        get() {
-            return _promoValue;
-        },
-        set(val) {
-            console.log(
-                `%c[promotions SET] length=${val?.length}  @${_t()}`,
-                'color:#f44;font-weight:bold'
-            );
-            console.trace(); // ← stack trace REAL aqui
-            _promoValue = val;
-        }
-    });
-
-    console.log('%c[DEBUG] setter trap instalado', 'color:#0f0', _t());
-
-    // dbReady watcher separado
-    this.$watch('dbReady', val => {
-        console.log(`%c[dbReady] → ${val}  @${_t()}`, 'color:#0af;font-weight:bold');
-        console.trace();
-    });
-});
-
-      this._loadSecurityState();
       this.darkMode = this.loadSetting('darkMode', false);
       document.documentElement.classList.toggle('dark', this.darkMode);
 
@@ -87,10 +52,7 @@ this.$nextTick(() => {
 
       // ── Carrega dados do Banco (Dexie) ────────────────────────────────────
       await this.loadAllData();
-
-      // ── Checa sessão admin ainda válida ───────────────────────────────────
-      this._loadSession();
-
+      this._initCloudAuth(); 
       // ── Alpine Watchers ───────────────────────────────────────────────────
       //
       // Usamos JSON diff para detectar mutações profundas (push/splice) sem
@@ -109,21 +71,34 @@ this.$nextTick(() => {
         try {
           const s = JSON.stringify(val);
           if (s !== _snapCat) { _snapCat = s; if (this.dbReady) await this.saveCategories(); }
-        } catch (e) { console.error('[watcher:categories] Erro ao salvar:', e); }
+        } catch (e) {
+          await this.logError(e.message || String(e), {
+            stack: e.stack || null, source: 'watcher:categories', type: 'autoSaveError',
+          }, 'app');
+        }
       };
 
       const _maybeSaveItems = async (val) => {
         try {
           const s = JSON.stringify(val);
           if (s !== _snapItems) { _snapItems = s; if (this.dbReady) await this.saveItems(); }
-        } catch (e) { console.error('[watcher:items] Erro ao salvar:', e); }
+        } catch (e) {
+          await this.logError(e.message || String(e), {
+            stack: e.stack || null, source: 'watcher:items', type: 'autoSaveError',
+          }, 'app');
+        }
       };
+
 
       const _maybeSavePromos = async (val) => {
         try {
           const s = JSON.stringify(val);
           if (s !== _snapPromos) { _snapPromos = s; if (this.dbReady) await this.savePromotions(); }
-        } catch (e) { console.error('[watcher:promotions] Erro ao salvar:', e); }
+        } catch (e) {
+          await this.logError(e.message || String(e), {
+            stack: e.stack || null, source: 'watcher:promotions', type: 'autoSaveError',
+          }, 'app');
+        }
       };
 
       this.$watch('categories',  _maybeSaveCats);
@@ -139,7 +114,9 @@ this.$nextTick(() => {
           await _maybeSaveItems(this.items);
           await _maybeSavePromos(this.promotions);
         } catch (e) {
-          console.error('[autoSave] Erro:', e);
+          await this.logWarn(e.message || String(e), {
+            stack: e.stack || null, source: 'autoSave', type: 'autoSaveError',
+          }, 'app');
           // Não interrompe o intervalo — falhas transitórias são ignoradas.
         }
       }, 4000);
@@ -167,7 +144,11 @@ this.$nextTick(() => {
             // No-op que aciona reatividade sem quebrar a referência do array.
             this.orderHistory.splice(this.orderHistory.length, 0);
           }
-        } catch (e) { console.error('[watcher:showAdminPanel] Erro:', e); }
+        } catch (e) {
+          this.logWarn(e.message || String(e), {
+            source: 'watcher:showAdminPanel', type: 'watcherError', stack: e.stack || null,
+          }, 'app');
+        }
       });
 
       this.$watch('adminTab', (tab) => {
@@ -181,7 +162,11 @@ this.$nextTick(() => {
           } else {
             this.omLeaveTab();
           }
-        } catch (e) { console.error('[watcher:adminTab] Erro:', e); }
+        } catch (e) {
+          this.logWarn(e.message || String(e), {
+            source: 'watcher:adminTab', type: 'watcherError', tab, stack: e.stack || null,
+          }, 'app');
+        }
       });
 
       this.$watch('activeTab', () => {
@@ -190,7 +175,11 @@ this.$nextTick(() => {
             this.searchQuery = '';
             this.showSearch  = false;
           }
-        } catch (e) { /* ignorado */ }
+        } catch (e) {
+          this.logWarn(e.message || String(e), {
+            source: 'watcher:activeTab', type: 'watcherError', stack: e.stack || null,
+          }, 'app');
+        }
       });
 
       // ── Atalho de teclado: Escape ─────────────────────────────────────────
@@ -219,13 +208,17 @@ this.$nextTick(() => {
           return;
         }
 
-        this.showProductForm  = false;
+        this.showProductForm = false;
       });
 
     } catch (e) {
-      console.error('[init] Erro durante inicialização:', e);
+      await this.logError(e.message || String(e), {
+        stack: e.stack || null, source: 'init', type: 'initError',
+      }, 'app');
     }
   };
+  
 
   return component;
+  
 }

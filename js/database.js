@@ -1,4 +1,6 @@
-const db = new Dexie('cardapioDigitalPro');
+const db = new Dexie('cardapioDigitalPro', {
+  addons: [DexieCloud.dexieCloud],
+});
 db.version(1).stores({
   config:       '++id',
   categories:   'id, active',
@@ -18,6 +20,34 @@ db.version(3).stores({
 // v4: tabela de logs de erro do sistema (Sys Logs)
 db.version(4).stores({
   errorLogs: 'id, severity, timestamp, resolved, module',
+});
+
+db.version(5).stores({
+  // Tabelas da aplicação — realmId indexado para filtros por realm
+  config:       '++id',                                      // local-only (admin manage via rlm-public)
+  categories:   'id, active, realmId',
+  items:        'id, category, available, promoId, realmId',
+  promotions:   'id, active, type, realmId',
+  orders:       'uuid, date, timestamp, currentStatus, realmId',
+  orderCounter: '++id',                                      // local-only
+  auditLog:     'id, timestamp, action, realmId',
+  errorLogs:    'id, severity, timestamp, resolved, module, realmId',
+
+  // Tabelas de controle de acesso (nomes e PKs são fixos — Dexie Cloud exige exatamente esses)
+  realms:  '@realmId',
+  members: '@id',
+  roles:   '[realmId+name]',
+});
+
+
+
+db.cloud.configure({
+  databaseUrl:  'https://zrl8ayakm.dexie.cloud', // URL do passo 1
+  requireAuth:  false,   // clientes podem navegar sem login; só admin/worker precisam autenticar
+  tryUseServiceWorker: true,
+  periodicSync: {
+    minInterval: 60_000, // sincroniza a cada 1 minuto no mínimo
+  },
 });
 
 const appDatabase = {

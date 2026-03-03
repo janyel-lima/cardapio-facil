@@ -215,6 +215,7 @@ const appCart = {
       this.appliedCoupon = coupon;
       this.couponInput   = '';
       await this.addAudit('COUPON_APPLIED', { code, discount: coupon.value, type: coupon.type });
+      this.logInfo('Cupom aplicado com sucesso', { source: 'applyCoupon', type: 'couponApplied', code, discountType: coupon.type, discountValue: coupon.value }, 'cart');
       this.showToast(`Cupom "${code}" aplicado! 🎟️`, 'success', '🎟️');
     } catch (e) {
       await this.logError(e.message || String(e), {
@@ -252,6 +253,7 @@ const appCart = {
       if (this.pixCountdown <= 0) {
         clearInterval(this._pixTimer);
         this.pixStatus = 'expired';
+        this.logWarn('PIX expirado por timeout', { source: 'openPixModal', type: 'pixExpired', orderTotal: this.orderTotal, customer: this.checkout?.name || null }, 'cart');
       }
     }, 1000);
   },
@@ -259,6 +261,7 @@ const appCart = {
   confirmPixPayment() {
     clearInterval(this._pixTimer);
     this.pixStatus = 'confirmed';
+    this.logInfo('Pagamento PIX confirmado pelo usuário', { source: 'confirmPixPayment', type: 'pixConfirmed', orderTotal: this.orderTotal, customer: this.checkout?.name || null }, 'cart');
     setTimeout(async () => {
       this.showPixModal = false;
       await this._finishOrder();
@@ -268,7 +271,8 @@ const appCart = {
   copyPixKey() {
     navigator.clipboard.writeText(this.config.pixKey)
       .then(() => { this.pixCopied = true; setTimeout(() => this.pixCopied = false, 3000); })
-      .catch(() => {
+      .catch(err => {
+        this.logWarn('navigator.clipboard indisponível — usando fallback execCommand', { source: 'copyPixKey', type: 'clipboardFallback', error: err?.message || String(err) }, 'cart');
         const ta = document.createElement('textarea');
         ta.value = this.config.pixKey;
         document.body.appendChild(ta);

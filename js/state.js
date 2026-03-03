@@ -4,13 +4,13 @@ const appState = {
   showAdminLogin: false, showAdminPanel: false, showProductForm: false,
   showPixModal: false, showTutorial: false, tutorialStep: 0, dbReady: false,
 
-  failedAttempts: 0, lockedUntil: null, sessionId: null, sessionExpiry: null,
-  sessionCountdownLabel: '', _sessionTimer: null,
-  SECURITY_MAX_ATTEMPTS: 5,
-  SECURITY_LOCKOUT_MS:   15 * 60 * 1000,
-  SECURITY_SESSION_MS:    4 * 60 * 60 * 1000,
   selectedPromoFilter: null,
   viewMode : 'grid',
+  loginEmail: '',
+otpSent: false,
+otpCode: '',
+otpLoading: false,
+loginError: '',
 
   pixStatus: 'pending', pixCopied: false, pixCountdown: 300, _pixTimer: null,
   selectedProduct: null, modalQty: 1, modalNote: '', modalSelectedComplements: {},
@@ -19,7 +19,7 @@ const appState = {
   checkout: { name: '', phone: '', address: '', complement: '', deliveryType: 'delivery', payment: 'pix' },
   couponInput: '', appliedCoupon: null,
 
-  isAdmin: false, adminPassword: '', adminError: '', adminTab: 'store',
+  isAdmin: false, adminTab: 'store',
   adminTabs: [
   { id: 'store',         name: 'Loja',                icon: '🏪' },
   { id: 'categories',    name: 'Categorias',           icon: '🏷️' },
