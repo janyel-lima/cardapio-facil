@@ -2,13 +2,16 @@
    CARDÁPIO DIGITAL PRO — js/auth.js
    Autenticação via Firebase Authentication (Email Link)
 
-   Migrado de: Dexie Cloud OTP
-   Estratégia: Email Link (passwordless) — Firebase nativo
-   Melhoria: sem código numérico frágil; link criptograficamente
-             assinado pelo Firebase, expiração automática.
+   Roles: Custom Claims no JWT do usuário → { role: "admin" | "worker" | "client" }
 
-   Roles: armazenadas em Firestore /users/{uid}.role
-          ('admin' | 'worker' | 'client')
+   Perfil integrado com Firebase Auth:
+     displayName → firebaseAuth.currentUser.updateProfile()
+     phone       → Firestore /users/{uid} (Auth não expõe phone sem phoneAuth)
+     email       → read-only, vem de firebaseAuth.currentUser.email
+
+   Como definir roles:
+     Dev  → node scripts/seed-emulator.js  (seta via REST do emulador)
+     Prod → node scripts/manage-roles.js set email role  (Admin SDK)
 ═══════════════════════════════════════════════════════ */
 
 const appAuth = {
@@ -17,39 +20,71 @@ const appAuth = {
   cloudUser:         null,
   cloudSyncing:      false,
   cloudLoginEmail:   '',
-  cloudLoginOtp:     '',           // mantido para compatibilidade com HTML (não usado no Firebase)
-  cloudLoginStep:    'email',      // 'email' | 'otp' (= link enviado) | 'done'
+  cloudLoginOtp:     '',
+  cloudLoginStep:    'email',      // 'email' | 'otp' | 'done'
   cloudLoginError:   '',
-  cloudOtpSent:      false,        // mantido para compatibilidade com HTML
+  cloudOtpSent:      false,
   showAdminLogin:    false,
   showAdminPanel:    false,
+  showUserProfile:   false,
+  userProfileTab:    'profile',
   _pendingPanelOpen: false,
+  _profileSaving:    false,
+
+  // userProfile espelha os campos editáveis do Firebase Auth + Firestore /users/{uid}.
+  // Populado por _loadUserProfile() após cada onAuthStateChanged.
+  userProfile: {
+    displayName: '',
+    phone:       '',
+  },
 
 
-  // ── Roles derivadas — sempre com guarda de null ────────────────────────────
+  // ── Roles derivadas ────────────────────────────────────────────────────────
   get isCloudAuthenticated() {
     return !!this.cloudUser && this.cloudUser.isLoggedIn === true;
   },
 
   get isCloudAdmin() {
-    if (!this.isCloudAuthenticated) return false;
-    return this.cloudUser?.roles?.includes('admin') ?? false;
+    return this.isCloudAuthenticated && (this.cloudUser?.roles?.includes('admin') ?? false);
   },
 
   get isCloudWorker() {
-    if (!this.isCloudAuthenticated) return false;
-    return this.cloudUser?.roles?.includes('worker') ?? false;
+    return this.isCloudAuthenticated && (this.cloudUser?.roles?.includes('worker') ?? false);
   },
 
   get isCloudClient() {
-    if (!this.isCloudAuthenticated) return false;
-    return this.cloudUser?.roles?.includes('client') ?? false;
+    return this.isCloudAuthenticated && (this.cloudUser?.roles?.includes('client') ?? false);
+  },
+
+
+  // ── Computed de UI ─────────────────────────────────────────────────────────
+
+  // Inicial do avatar: displayName > email > '?'
+  get userAvatarInitial() {
+    const name  = this.userProfile.displayName || this.cloudUser?.name || '';
+    const email = this.cloudUser?.email || '';
+    const src   = name.trim() || email;
+    return src ? src.trim().charAt(0).toUpperCase() : '?';
+  },
+
+  // Badge de role com cor e rótulo
+  get userRoleLabel() {
+    if (!this.isCloudAuthenticated) return null;
+    if (this.isCloudAdmin)  return { text: '👑 Admin',      color: '#8b5cf6', bg: 'rgba(139,92,246,.12)' };
+    if (this.isCloudWorker) return { text: '🧑‍🍳 Atendente', color: '#f59e0b', bg: 'rgba(245,158,11,.12)'  };
+    return                         { text: '🛒 Cliente',    color: '#3b82f6', bg: 'rgba(59,130,246,.12)'  };
+  },
+
+  // Pedidos do usuário logado — filtra orderHistory pelo userId
+  get myOrders() {
+    if (!this.isCloudAuthenticated || !this.cloudUser?.userId) return [];
+    return [...this.orderHistory]
+      .filter(o => o.userId === this.cloudUser.userId)
+      .reverse();
   },
 
 
   // ── Passo 1 — envia o Email Link ───────────────────────────────────────────
-  // Substitui cloudSendOtp() do Dexie Cloud.
-  // Mesmo nome → sem alteração nos templates HTML.
   async cloudSendOtp() {
     if (!this.cloudLoginEmail.trim()) {
       this.cloudLoginError = 'Digite seu e-mail.';
@@ -59,23 +94,13 @@ const appAuth = {
       this.cloudLoginError = '';
       this.cloudSyncing    = true;
 
-      const actionCodeSettings = {
-        // URL para onde o Firebase redireciona após o clique.
-        // Em produção, deve ser o domínio do seu app (ex: https://meurestaurante.web.app).
+      await firebaseAuth.sendSignInLinkToEmail(this.cloudLoginEmail.trim(), {
         url:             window.location.origin + window.location.pathname,
         handleCodeInApp: true,
-      };
+      });
 
-      await firebaseAuth.sendSignInLinkToEmail(
-        this.cloudLoginEmail.trim(),
-        actionCodeSettings,
-      );
-
-      // Persiste o e-mail para completar o sign-in quando o link for clicado
-      // (mesmo dispositivo → sem precisar digitar o e-mail novamente).
       localStorage.setItem('cardapio_signInEmail', this.cloudLoginEmail.trim());
-
-      this.cloudLoginStep = 'otp';    // reutiliza estado → HTML mostra tela "verifique e-mail"
+      this.cloudLoginStep = 'otp';
       this.cloudOtpSent   = true;
 
     } catch (e) {
@@ -86,10 +111,7 @@ const appAuth = {
   },
 
 
-  // ── Passo 2 — não é mais necessário ───────────────────────────────────────
-  // Com Firebase Email Link, o sign-in é completado automaticamente quando
-  // o usuário clica no link. Este método existe apenas para não quebrar
-  // templates HTML que chamam cloudConfirmOtp().
+  // ── Passo 2 — stub (Email Link não usa OTP numérico) ──────────────────────
   async cloudConfirmOtp() {
     this.cloudLoginError = '📧 Clique no link enviado para ' + (this.cloudLoginEmail || 'seu e-mail') + ' para entrar.';
   },
@@ -99,7 +121,6 @@ const appAuth = {
   async cloudLogout() {
     try {
       await firebaseAuth.signOut();
-      // onAuthStateChanged cuida do reset da UI
     } catch (e) {
       await this.logError?.(e.message || String(e), {
         source: 'cloudLogout', type: 'authError', stack: e.stack || null,
@@ -108,20 +129,14 @@ const appAuth = {
   },
 
 
-  // ── Processa Email Link na URL (chamado em init()) ─────────────────────────
-  // Detecta se a URL atual contém um link de sign-in do Firebase e o processa.
-  // Cuida do caso "link aberto em outro dispositivo" pedindo o e-mail via prompt.
+  // ── Processa Email Link na URL ─────────────────────────────────────────────
   async _checkEmailLink() {
     try {
       if (!firebaseAuth.isSignInWithEmailLink(window.location.href)) return;
 
       let email = localStorage.getItem('cardapio_signInEmail');
-
       if (!email) {
-        // Usuário abriu o link em outro dispositivo — solicita confirmação do e-mail
-        email = window.prompt(
-          'Para continuar, confirme o endereço de e-mail que você usou para entrar:',
-        );
+        email = window.prompt('Confirme o e-mail usado para entrar:');
         if (!email) return;
       }
 
@@ -131,8 +146,6 @@ const appAuth = {
       await firebaseAuth.signInWithEmailLink(email.trim(), window.location.href);
 
       localStorage.removeItem('cardapio_signInEmail');
-
-      // Remove o link de sign-in da URL (segurança + UX limpo)
       window.history.replaceState({}, document.title, window.location.pathname);
 
     } catch (e) {
@@ -145,123 +158,175 @@ const appAuth = {
   },
 
 
-  // ── Subscriber: onAuthStateChanged ────────────────────────────────────────
-  // Única fonte de verdade para estado de autenticação.
-  // Busca a role do usuário no Firestore /users/{uid} após cada login.
+  // ── onAuthStateChanged ─────────────────────────────────────────────────────
   _initCloudAuth() {
-    // Verifica link de e-mail na URL antes de registrar o subscriber
     this._checkEmailLink();
 
     firebaseAuth.onAuthStateChanged(async firebaseUser => {
+      // Teardown imediato: destrói listener de pedidos antes de qualquer await.
+      // Sem isso, o listener do admin anterior fica ativo durante a troca de
+      // usuário e o Firestore reavalia as rules com o token do novo usuário →
+      // realtimeListenerError se o novo usuário não for worker/admin.
+      this._ordersUnsubscribe?.();
+      this._ordersUnsubscribe = null;
+
       if (!firebaseUser) {
-        // Sessão encerrada ou expirada — reseta tudo
         this.cloudUser         = null;
+        this.userProfile       = { displayName: '', phone: '' };
         this.showAdminPanel    = false;
         this.showAdminLogin    = false;
         this.showClientLogin   = false;
+        this.showUserProfile   = false;
         this._pendingPanelOpen = false;
         this.cloudLoginStep    = 'email';
         this.cloudOtpSent      = false;
         return;
       }
 
-      // Busca role no Firestore (/users/{uid})
-      // roles são definidas pelo admin diretamente no Firestore Console
-      // ou via função auxiliar _setUserRole() abaixo.
+      // Lê role do Custom Claim — forceRefresh só no login recém-feito.
       let roles = [];
       try {
-        const userDoc = await firestoreDb.collection('users').doc(firebaseUser.uid).get();
-        if (userDoc.exists) {
-          const role = userDoc.data()?.role;
-          if (role) roles = [role];
-        }
+        const forceRefresh = this._pendingPanelOpen;
+        const tokenResult  = await firebaseUser.getIdTokenResult(forceRefresh);
+        const role         = tokenResult.claims.role;
+        if (role) roles = [role];
+        console.debug('[auth] uid:', firebaseUser.uid, '| role:', role ?? '(nenhuma)');
       } catch (e) {
-        // Falha não-crítica: usuário autenticado mas sem role definida = cliente
-        console.warn('[auth] Não foi possível carregar role:', e.message);
+        console.warn('[auth] Não foi possível ler claims:', e.message);
       }
 
       this.cloudUser = {
         userId:     firebaseUser.uid,
-        name:       firebaseUser.displayName
-                      || firebaseUser.email?.split('@')[0]
-                      || 'Usuário',
+        name:       firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Usuário',
         email:      firebaseUser.email,
         roles,
         isLoggedIn: true,
       };
 
-      // Fecha modais de login sempre que autenticado
-      this.showAdminLogin    = false;
-      this.showClientLogin   = false;
-      this.cloudLoginStep    = 'done';
-      this._loadUserProfile?.();
-      this.showLoginNudge    = false;
+      this.showAdminLogin  = false;
+      this.showClientLogin = false;
+      this.cloudLoginStep  = 'done';
+      this.showLoginNudge  = false;
 
-      // Carrega dados protegidos agora que roles estão definidas
-      // (orders para worker/admin, auditLog para admin)
+      // Carrega perfil do Firebase Auth + Firestore /users/{uid}
+      await this._loadUserProfile();
+
+      // Dados protegidos (orders para worker/admin, auditLog para admin)
       await this.loadProtectedData?.();
 
-      // Abre painel se havia intenção pendente E o usuário tem a role
       if (this._pendingPanelOpen) {
         this._pendingPanelOpen = false;
         if (this.isCloudAdmin || this.isCloudWorker) {
           this.showAdminPanel = true;
         }
       }
-
-      // Se o painel está aberto mas o usuário perdeu a role (rebaixado remotamente)
-      if (this.showAdminPanel && !this.isCloudAdmin && !this.isCloudWorker) {
-        this.showAdminPanel = false;
-      }
     });
   },
 
 
+  // ── Carrega perfil do Firebase Auth + Firestore ────────────────────────────
+  //
+  // Fonte de verdade:
+  //   displayName → firebaseAuth.currentUser.displayName  (Firebase Auth)
+  //   phone       → Firestore /users/{uid}.phone
+  //
+  // Chamado automaticamente no onAuthStateChanged.
+  // Pode ser chamado manualmente para recarregar após edição externa.
+  async _loadUserProfile() {
+    const fbUser = firebaseAuth.currentUser;
+    if (!fbUser) return;
+
+    // 1. Firebase Auth: displayName já está no objeto local, sem roundtrip.
+    this.userProfile.displayName = fbUser.displayName || '';
+
+    // 2. Firestore: campos extras não suportados pelo Firebase Auth (phone etc.)
+    try {
+      const doc = await firestoreDb.collection('users').doc(fbUser.uid).get();
+      if (doc.exists) {
+        const data = doc.data();
+        this.userProfile.phone = data.phone || '';
+      }
+    } catch (e) {
+      // Permissão negada (ex: novo usuário sem doc ainda) → ignora silenciosamente.
+      // O perfil funciona mesmo assim com os dados do Firebase Auth.
+      console.warn('[auth] _loadUserProfile: Firestore read skipped:', e.message);
+    }
+  },
+
+
+  // ── Salva perfil no Firebase Auth + Firestore ──────────────────────────────
+  //
+  // displayName → updateProfile() — propaga para tokens futuros e para
+  //               cloudUser.name imediatamente, sem precisar de logout/login.
+  // phone       → Firestore /users/{uid} com merge:true — preserva outros campos.
+  async saveUserProfile() {
+    const fbUser = firebaseAuth.currentUser;
+    if (!fbUser || this._profileSaving) return;
+
+    this._profileSaving = true;
+    try {
+      const displayName = this.userProfile.displayName.trim();
+      const phone       = this.userProfile.phone.replace(/\D/g, '');
+
+      // Firebase Auth: atualiza displayName
+      await fbUser.updateProfile({ displayName: displayName || null });
+
+      // Firestore: atualiza /users/{uid} — merge para não apagar outros campos
+      await firestoreDb.collection('users').doc(fbUser.uid).set(
+        { phone, updatedAt: new Date().toISOString() },
+        { merge: true },
+      );
+
+      // Sincroniza cloudUser.name localmente (sem aguardar novo onAuthStateChanged)
+      if (this.cloudUser) {
+        this.cloudUser = {
+          ...this.cloudUser,
+          name: displayName || fbUser.email?.split('@')[0] || 'Usuário',
+        };
+      }
+
+      // Normaliza valores locais (remove espaços extras, máscara do phone)
+      this.userProfile.displayName = displayName;
+      this.userProfile.phone       = phone;
+
+      this.showToast?.('Perfil salvo!', 'success', '✅');
+
+    } catch (e) {
+      await this.logError?.(e.message || String(e), {
+        source: 'saveUserProfile', type: 'authError', stack: e.stack || null,
+        uid: firebaseAuth.currentUser?.uid || null,
+      }, 'auth');
+      this.showToast?.('Erro ao salvar perfil.', 'error', '❌');
+    } finally {
+      this._profileSaving = false;
+    }
+  },
+
+
   // ── Dev: Login rápido via Firebase Auth Emulator ──────────────────────────
-  // Usado EXCLUSIVAMENTE pelo Dev Toolbar (APP_ENV.isDev).
-  //
-  // Usa signInWithEmailAndPassword (muito mais simples que Email Link)
-  // porque o seed-emulator.js cria os usuários com senha determinística.
-  //
-  // Senhas dos usuários de teste (definidas em scripts/seed-emulator.js):
-  //   admin@test.com   → admin123
-  //   worker@test.com  → worker123
-  //   cliente@test.com → cliente123
   async _devQuickLogin(email) {
     if (!window.APP_ENV?.isDev) return;
 
-    // Deriva a senha a partir do prefixo do e-mail (ex: "admin" → "admin123")
     const prefix   = email.split('@')[0];
     const password = `${prefix}123`;
 
     try {
       this.cloudSyncing      = true;
       this._pendingPanelOpen = true;
+
       await firebaseAuth.signInWithEmailAndPassword(email, password);
-      // onAuthStateChanged → loadProtectedData() → abre painel se admin/worker
+      // onAuthStateChanged → teardown listener → getIdTokenResult(true) → role ✅
+
     } catch (e) {
       this._pendingPanelOpen = false;
       const msg = e.code === 'auth/user-not-found' || e.code === 'auth/wrong-password'
-        ? `Usuário não encontrado no emulador. Rode: node scripts/seed-emulator.js`
+        ? 'Usuário não encontrado. Rode: node scripts/seed-emulator.js'
         : e.message;
       this.showToast?.('Dev login falhou: ' + msg, 'error', '🔴');
       console.error('[dev] _devQuickLogin falhou:', e.code, msg);
     } finally {
       this.cloudSyncing = false;
     }
-  },
-
-
-  // ── Utilitário: define role de um usuário (uso admin) ─────────────────────
-  // Chame no console do browser ou em um script de setup:
-  //   await this._setUserRole('uid-do-usuario', 'admin')
-  async _setUserRole(uid, role) {
-    const validRoles = ['admin', 'worker', 'client'];
-    if (!validRoles.includes(role)) {
-      throw new Error(`Role inválida: "${role}". Use: ${validRoles.join(', ')}`);
-    }
-    await firestoreDb.collection('users').doc(uid).set({ role }, { merge: true });
-    console.info(`[auth] Role "${role}" atribuída ao usuário ${uid}`);
   },
 };
 

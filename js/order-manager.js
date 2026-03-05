@@ -1,6 +1,12 @@
 /* ═══════════════════════════════════════════════════════════════
    CARDÁPIO DIGITAL PRO — js/order-manager.js
    Gerenciamento de pedidos pelo admin
+
+   Migrado de: Dexie (db.orders.put / polling interval)
+   Agora:      Firestore via this.updateOrder() + onSnapshot realtime
+               O onSnapshot (_initRealtimeOrders em database.js) já
+               mantém this.orderHistory atualizado em tempo real —
+               polling é desnecessário e foi removido.
 ════════════════════════════════════════════════════════════════ */
 
 const appOrderManager = {
@@ -48,9 +54,19 @@ const appOrderManager = {
 
   /* ── Computed ──────────────────────────────────────────────── */
   get omFilteredOrders() {
-    let list = [...this.orderHistory].reverse();
+    // ── Janela operacional: hoje + ontem ──────────────────────
+    const now  = new Date();
+    const today     = now.toLocaleDateString('pt-BR');
+    const yesterdayDate = new Date(now);
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterday = yesterdayDate.toLocaleDateString('pt-BR');
+
+    let list = this.orderHistory.filter(o => o.date === today || o.date === yesterday);
+
+    // ── Filtros de status e busca ─────────────────────────────
     if (this.omFilter !== 'all')
       list = list.filter(o => (o.currentStatus ?? 'paid') === this.omFilter);
+
     if (this.omSearch.trim()) {
       const q = this.omSearch.toLowerCase();
       list = list.filter(o =>
@@ -59,6 +75,22 @@ const appOrderManager = {
         o.phone?.includes(q),
       );
     }
+
+    // ── Ordenação por urgência ────────────────────────────────
+    // Ativos primeiro (mais antigos no topo = esperando há mais tempo),
+    // entregues/cancelados no final (mais recentes primeiro).
+    const DONE = new Set(['delivered', 'cancelled']);
+    list.sort((a, b) => {
+      const aDone = DONE.has(a.currentStatus ?? 'paid');
+      const bDone = DONE.has(b.currentStatus ?? 'paid');
+      if (aDone !== bDone) return aDone ? 1 : -1;          // ativos primeiro
+      const tA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const tB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return aDone
+        ? tB - tA   // finalizados: mais recente primeiro
+        : tA - tB;  // ativos: mais antigo primeiro (maior espera = mais urgente)
+    });
+
     return list;
   },
 
@@ -103,11 +135,15 @@ const appOrderManager = {
     }
     this._omSyncSelectedOrder();
     this.omLastCount = this.orderHistory.length;
-    this._omStartPolling();
+
+    // onSnapshot (database.js → _initRealtimeOrders) já está rodando e
+    // mantém this.orderHistory atualizado com latência zero.
+    // _omStartNewOrderWatch apenas monitora contagem para tocar o alerta sonoro.
+    this._omStartNewOrderWatch();
   },
 
   omLeaveTab() {
-    clearInterval(this._omPollTimer);
+    this._omStopNewOrderWatch();
   },
 
   openOrderManager() {
@@ -116,10 +152,12 @@ const appOrderManager = {
 
   closeOrderManager() {
     this.showOrderManager = false;
-    clearInterval(this._omPollTimer);
+    this._omStopNewOrderWatch();
   },
 
   /* ── Sincronização do pedido aberto no detalhe ─────────────── */
+  // Chamado sempre que omSelectedOrder pode estar desatualizado.
+  // Como onSnapshot já mutou this.orderHistory, basta re-buscar por uuid.
   _omSyncSelectedOrder() {
     if (!this.omSelectedOrder) return;
     const fresh = this.orderHistory.find(o => o.uuid === this.omSelectedOrder.uuid);
@@ -209,18 +247,11 @@ const appOrderManager = {
     this.omDraft.changeFor = Math.max(0, parseFloat(val) || 0);
   },
 
-  // FIX: recalcula totais do draft usando:
-  //   1. subtotal dos itens editados
-  //   2. descontos automáticos de carrinho reavaliados contra o novo subtotal
-  //   3. desconto manual adicionado pelo admin
-  // Isso garante que ao remover itens o total reflita as regras de promoção atuais.
   _omRecalcDraft() {
     if (!this.omDraft) return;
 
     const subtotal = this.omDraft.items.reduce((s, i) => s + (i.total ?? 0), 0);
 
-    // Recalcula descontos de CARRINHO com as regras de promoção ativas atuais.
-    // Promoções de ITEM já estão embutidas nos preços unitários (item.unitPrice).
     let autoDiscount = 0;
     for (const p of (this.promotions || []).filter(p =>
       p.active &&
@@ -233,10 +264,7 @@ const appOrderManager = {
       else if (p.type === 'fixed') autoDiscount += p.value;
     }
 
-    // Mantém desconto de cupom original (já estava aplicado no pedido).
-    // O cupom não é recalculado pois está fixado no momento da compra.
     const couponDiscount = this.omDraft.couponDetail?.discountAmount ?? 0;
-
     const manualDiscount = this.omDraft.manualDiscount ?? 0;
     const totalDiscount  = Math.min(autoDiscount + couponDiscount + manualDiscount, subtotal);
     const total          = Math.max(0, subtotal - totalDiscount + (this.omDraft.deliveryFee ?? 0));
@@ -266,12 +294,12 @@ const appOrderManager = {
         updatedBy: 'admin',
       });
 
-      const plainUpdated = JSON.parse(JSON.stringify(updated));
-      await db.orders.put(plainUpdated);
+      // Persiste no Firestore — onSnapshot propaga de volta para
+      // this.orderHistory automaticamente (sem splice manual aqui).
+      await this.updateOrder(updated);
 
-      const idx = this.orderHistory.findIndex(o => o.uuid === updated.uuid);
-      if (idx !== -1) this.orderHistory.splice(idx, 1, plainUpdated);
-      this.omSelectedOrder = { ...plainUpdated };
+      // Atualiza a view de detalhe com os dados recém-salvos
+      this.omSelectedOrder = { ...updated };
       this.omDraft         = null;
       this.omEditMode      = false;
 
@@ -304,7 +332,6 @@ const appOrderManager = {
     const statusInfo = this.omStatuses.find(s => s.id === newStatusId);
     if (!statusInfo) return;
     try {
-      // Trabalha em cópia limpa para evitar mutação de proxy Alpine
       const updated = JSON.parse(JSON.stringify(order));
       if (!updated.timeline) updated.timeline = [];
       const event = {
@@ -319,15 +346,15 @@ const appOrderManager = {
       updated.currentStatus = newStatusId;
       updated.updatedAt     = event.timestamp;
 
-      await db.orders.put(updated);
+      // Persiste no Firestore — onSnapshot propaga para this.orderHistory.
+      // Não fazemos splice manual: duplicaria a atualização.
+      await this.updateOrder(updated);
 
-      const idx = this.orderHistory.findIndex(o => o.uuid === updated.uuid);
-      if (idx !== -1) this.orderHistory.splice(idx, 1, updated);
-
+      // Atualiza views locais imediatamente (antes do snapshot chegar)
+      // para UX responsiva — o onSnapshot vai confirmar/sincronizar logo após.
       if (this.omSelectedOrder?.uuid === updated.uuid)
         this.omSelectedOrder = { ...updated };
 
-      // Sincroniza também com o módulo de rastreamento (tracking.js)
       if (this.trackingOrder?.uuid === updated.uuid)
         this.trackingOrder = { ...updated };
 
@@ -354,11 +381,9 @@ const appOrderManager = {
       return;
     }
     try {
-      // FIX: omSetStatus já exibe o toast de status — não duplicar com outro showToast.
       await this.omSetStatus(order, 'cancelled', this.omCancelReason.trim());
       this.omCancelReason      = '';
       this.omShowCancelConfirm = false;
-      // Nota: não chamamos showToast aqui pois omSetStatus já exibiu "❌ Cancelado".
     } catch (e) {
       await this.logError(e.message || String(e), {
         stack: e.stack || null, source: 'omCancelOrder', type: 'orderManagerError',
@@ -397,42 +422,34 @@ const appOrderManager = {
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(defaultMsg)}`, '_blank');
   },
 
-  /* ── Polling para novos pedidos ────────────────────────────── */
-  _omStartPolling() {
-    clearInterval(this._omPollTimer);
-    this._omPollTimer = setInterval(async () => {
-      try {
-        const today = new Date().toLocaleDateString('pt-BR');
-        const fresh = await db.orders.where('date').equals(today).toArray();
+  /* ── Watcher de novos pedidos (alerta sonoro) ──────────────── */
+  //
+  // Substituiu o _omStartPolling() que fazia db.orders.where().toArray() a cada 8s.
+  //
+  // onSnapshot já mantém this.orderHistory em sync — o watcher apenas
+  // observa a contagem para disparar o alerta sonoro quando um novo pedido chega.
+  // Usa $watch do Alpine sobre orderHistory.length.
+  _omStartNewOrderWatch() {
+    this._omStopNewOrderWatch();
 
-        if (fresh.length > this.omLastCount) this._omPlayAlert();
+    // Guarda contagem atual como baseline
+    this.omLastCount = this.orderHistory.length;
 
-        let changed = false;
-        fresh.forEach(fo => {
-          const i = this.orderHistory.findIndex(o => o.uuid === fo.uuid);
-          if (i === -1) {
-            this.orderHistory.push(fo);
-            changed = true;
-          } else {
-            const existing = this.orderHistory[i];
-            if (fo.updatedAt && (!existing.updatedAt || fo.updatedAt > existing.updatedAt)) {
-              this.orderHistory.splice(i, 1, fo);
-              changed = true;
-              if (this.omSelectedOrder?.uuid === fo.uuid)
-                this.omSelectedOrder = { ...fo };
-            }
-          }
-        });
-
-        this.omLastCount = fresh.length;
-      } catch (e) {
-        // Falhas transitórias de polling não devem interromper o ciclo,
-        // mas são registradas como warn para diagnóstico.
-        this.logWarn(e.message || String(e), {
-          source: '_omStartPolling', type: 'pollingError', stack: e.stack || null,
-        }, 'order-manager');
+    // $watch requer contexto Alpine — usa um interval leve (1s) apenas
+    // para comparar contagem, sem nenhum I/O. O Firestore onSnapshot
+    // é quem realmente popula orderHistory.
+    this._omWatchTimer = setInterval(() => {
+      const current = this.orderHistory.length;
+      if (current > this.omLastCount) {
+        this._omPlayAlert();
       }
-    }, 8000);
+      this.omLastCount = current;
+    }, 1000);
+  },
+
+  _omStopNewOrderWatch() {
+    clearInterval(this._omWatchTimer);
+    this._omWatchTimer = null;
   },
 
   /* ── Som de alerta ─────────────────────────────────────────── */
@@ -457,10 +474,10 @@ const appOrderManager = {
       }, 'order-manager');
     }
   },
-
-  /* ── Tempo decorrido ───────────────────────────────────────── */
-  omElapsedMinutes(order) {
-    if (!order.timestamp) return null;
+ omElapsedMinutes(order) {
+    // 1. Adicionada a checagem "!order" para evitar o erro Cannot read properties of null
+    if (!order || !order.timestamp) return null;
+    
     const min = Math.floor((Date.now() - new Date(order.timestamp).getTime()) / 60000);
     if (min < 1)  return 'Agora';
     if (min < 60) return `${min}min`;
@@ -469,10 +486,12 @@ const appOrderManager = {
   },
 
   omElapsedColor(order) {
-    if (!order.timestamp) return '';
+    // 2. Adicionada a checagem "!order" para evitar o erro Cannot read properties of null
+    if (!order || !order.timestamp) return '';
+    
     const min = Math.floor((Date.now() - new Date(order.timestamp).getTime()) / 60000);
     if (min < 10) return 'color:#22c55e';
     if (min < 25) return 'color:#f59e0b';
     return 'color:#ef4444';
   },
-};
+}

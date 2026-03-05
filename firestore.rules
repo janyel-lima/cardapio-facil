@@ -3,15 +3,9 @@ rules_version = '2';
 // ═══════════════════════════════════════════════════════════════════════════
 //   CARDÁPIO DIGITAL PRO — firestore.rules
 //
-//   Modelo de segurança:
-//     • Cardápio (categorias, itens, promoções, config): leitura pública,
-//       escrita restrita a admins.
-//     • Pedidos: qualquer pessoa pode criar (clientes), admins/workers
-//       podem ler e atualizar status.
-//     • AuditLog: somente admins.
-//     • ErrorLogs: qualquer um escreve (captura de erros), admins/workers
-//       leem e gerenciam.
-//     • Users: cada usuário lê o próprio doc; admin gerencia todos.
+//   Roles via Custom Claims (request.auth.token.role)
+//   Migrado de: Firestore /users/{uid}.role  (get() por avaliação = custo extra)
+//   Agora:      JWT claim in-process         (grátis, zero leitura Firestore)
 // ═══════════════════════════════════════════════════════════════════════════
 
 service cloud.firestore {
@@ -23,21 +17,19 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Busca o documento /users/{uid} do usuário autenticado.
-    // Necessário para verificar roles sem Custom Claims.
-    function userRole() {
-      return isAuthed()
-        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '')
-        : '';
+    // Lê a role direto do Custom Claim no JWT — sem get(), sem custo.
+    // Definido por: Admin SDK (prod) ou seed-emulator.js (dev).
+    function role() {
+      return isAuthed() ? request.auth.token.get('role', '') : '';
     }
 
-    function isAdmin()  { return userRole() == 'admin'; }
-    function isWorker() { return userRole() == 'admin' || userRole() == 'worker'; }
+    function isAdmin()  { return role() == 'admin'; }
+    function isWorker() { return role() in ['admin', 'worker']; }
 
 
     // ── Config ────────────────────────────────────────────────────────────────
     match /config/{doc} {
-      allow read:  if true;          // cardápio público precisa da config
+      allow read:  if true;
       allow write: if isAdmin();
     }
 
@@ -66,39 +58,37 @@ service cloud.firestore {
     }
 
     // ── Pedidos ───────────────────────────────────────────────────────────────
-    // Clientes criam pedidos sem autenticação (checkout público).
-    // Workers/admins leem, atualizam status e deletam (limpeza de histórico).
     match /orders/{orderId} {
-      allow create: if true;         // checkout público
+      allow create: if true;
       allow read:   if isWorker();
       allow update: if isWorker();
-      allow delete: if isAdmin();    // apenas admin pode apagar histórico
+      allow delete: if isAdmin();
     }
 
     // ── Audit Log ─────────────────────────────────────────────────────────────
     match /auditLog/{id} {
       allow read:   if isAdmin();
-      allow create: if isWorker();   // admins e workers geram entradas
-      allow update: if false;        // auditoria é imutável
+      allow create: if isWorker();
+      allow update: if false;
       allow delete: if isAdmin();
     }
 
     // ── Error Logs ────────────────────────────────────────────────────────────
-    // Qualquer usuário (até anônimo) pode escrever — necessário para capturar
-    // erros do lado do cliente em qualquer contexto.
     match /errorLogs/{id} {
       allow read:   if isWorker();
-      allow create: if true;         // captura de erros de clientes
-      allow update: if isWorker();   // marcar como resolvido
+      allow create: if true;
+      allow update: if isWorker();
       allow delete: if isAdmin();
     }
 
-    // ── Users (roles) ─────────────────────────────────────────────────────────
+
+    // ── Users ─────────────────────────────────────────────────────────────────
+    // Roles agora vivem nos Custom Claims do JWT — esta coleção é opcional.
+    // Mantida para dados de perfil do usuário (displayName, phone, etc.)
+    // que não devem ir para o token.
     match /users/{userId} {
-      // Cada usuário lê e atualiza seu próprio perfil (ex: displayName)
-      allow read:   if isAuthed() && (request.auth.uid == userId || isAdmin());
-      // Somente admin define/altera roles
-      allow write:  if isAdmin();
+      allow read:   if isAuthed() && request.auth.uid == userId;
+      allow write:  if isAuthed() && request.auth.uid == userId;
     }
   }
 }

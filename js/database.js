@@ -47,6 +47,46 @@ const appDatabase = {
   },
 
   // ─────────────────────────────────────────────────────────────────────────
+  // STORE — salva tudo de uma vez (config + categorias + itens + promoções)
+  //
+  // Estratégia: Promise.all para paralelizar os writes independentes.
+  // Não usamos transaction multi-coleção porque _replaceCollection precisa
+  // ler docs existentes antes de escrever — isso tornaria a transaction
+  // pesada e complexa sem benefício real para este caso de uso.
+  //
+  // Limite de 1MB/doc impede consolidar tudo em um único documento Firestore.
+  // Coleções separadas são o padrão correto para listas de tamanho variável.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async saveStore() {
+    try {
+      await Promise.all([
+        firestoreDb.collection('config').doc('main').set(
+          JSON.parse(JSON.stringify(this.config)),
+        ),
+        this._replaceCollection('categories', this.categories),
+        this._replaceCollection('items',      this.items),
+        this._replaceCollection('promotions', this.promotions),
+      ]);
+
+      await this.addAudit('STORE_SAVED', {
+        restaurantName: this.config.restaurantName,
+        categories:     this.categories.length,
+        items:          this.items.length,
+        promotions:     this.promotions.length,
+      });
+
+      this.showToast('Loja salva com sucesso!', 'success', '🏪');
+
+    } catch (e) {
+      await this.logError(e.message || String(e), {
+        stack: e.stack || null, source: 'saveStore', type: 'dbWriteError',
+      }, 'database');
+      this.showToast('Erro ao salvar a loja.', 'error', '❌');
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
   // CONFIG
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -207,17 +247,41 @@ const appDatabase = {
   // carga inicial (que já populou orderHistory via getDocs).
   // ─────────────────────────────────────────────────────────────────────────
 
-  _initRealtimeOrders() {
+  async _initRealtimeOrders() {
     if (this._ordersUnsubscribe) {
       this._ordersUnsubscribe();
       this._ordersUnsubscribe = null;
     }
 
+    // Guard 1: usuário precisa estar logado.
+    const user = firebaseAuth.currentUser;
+    if (!user) return;
+
+    let role = '';
+    try {
+      // forceRefresh=false — token já foi refreshado pelo onAuthStateChanged.
+      // Usar true aqui causava double-refresh desnecessário e não resolvia a race.
+      const tokenResult = await user.getIdTokenResult(false);
+      role = tokenResult.claims.role ?? '';
+    } catch (e) {
+      return; // token inválido ou usuário deslogado durante o await
+    }
+
+    // Guard 2: anti-race — verifica se o usuário não mudou durante o await.
+    // Cenário: cliente loga enquanto este método estava suspenso no getIdTokenResult.
+    // O teardown em auth.js viu _ordersUnsubscribe=null (listener ainda não existia),
+    // então nada foi destruído. Sem este guard, o listener subiria com uid de admin
+    // mas o Firestore avaliaria com o token do novo usuário (cliente) → rejeição.
+    if (firebaseAuth.currentUser?.uid !== user.uid) return;
+
+    // Guard 3: só admin/worker têm permissão de `list` em /orders.
+    if (!['admin', 'worker'].includes(role)) return;
+
     this._ordersUnsubscribe = firestoreDb
       .collection('orders')
       .orderBy('timestamp', 'asc')
       .onSnapshot(
-        { includeMetadataChanges: false }, // ignora mudanças de estado de sync (hasPendingWrites)
+        { includeMetadataChanges: false },
         snapshot => {
           if (!Array.isArray(this.orderHistory)) return;
 
@@ -245,23 +309,23 @@ const appDatabase = {
   },
 
   // ─────────────────────────────────────────────────────────────────────────
-  // CARGA INICIAL — substitui o loadAllData() do Dexie
+  // CARGA INICIAL — dados públicos apenas
   //
-  // Promise.all paralelo para todas as coleções → mesma performance.
-  // Ao final, inicia o listener de tempo real para pedidos.
+  // Carrega somente as coleções com read: true nas Security Rules.
+  // Dados protegidos (auditLog, orders) são carregados pelo auth.js
+  // após o onAuthStateChanged confirmar a sessão → sem race condition
+  // e sem erro de permissão para usuários não autenticados.
   // ─────────────────────────────────────────────────────────────────────────
 
   async loadAllData() {
     try {
-      const [cfgSnap, catsSnap, itemsSnap, promosSnap, ordersSnap, counterSnap, auditSnap] =
+      const [cfgSnap, catsSnap, itemsSnap, promosSnap, counterSnap] =
         await Promise.all([
           firestoreDb.collection('config').doc('main').get(),
           firestoreDb.collection('categories').get(),
           firestoreDb.collection('items').get(),
           firestoreDb.collection('promotions').get(),
-          firestoreDb.collection('orders').orderBy('timestamp', 'asc').get(),
           firestoreDb.collection('meta').doc('orderCounter').get(),
-          firestoreDb.collection('auditLog').orderBy('timestamp', 'asc').get(),
         ]);
 
       // Config
@@ -275,42 +339,20 @@ const appDatabase = {
       const cats   = catsSnap.docs.map(d => d.data());
       const its    = itemsSnap.docs.map(d => d.data());
       const promos = promosSnap.docs.map(d => d.data());
-      const orders = ordersSnap.docs.map(d => d.data());
-      const audit  = auditSnap.docs.map(d => d.data());
 
       if (cats.length)   this.categories.splice(0, Infinity, ...cats);
       if (its.length)    this.items.splice(0, Infinity, ...its);
       if (promos.length) this.promotions.splice(0, Infinity, ...promos);
 
-      if (!Array.isArray(this.orderHistory)) {
-        console.error(
-          '[loadAllData] ERRO: this.orderHistory não é array.\n' +
-          'Declare orderHistory: [] no estado inicial do Alpine antes do merge.',
-        );
-        this.dbReady = true;
-        return;
-      }
-      if (orders.length) {
-        this.orderHistory.splice(0, this.orderHistory.length, ...orders);
-      }
-
       if (counterSnap.exists) {
         this.orderCounter = counterSnap.data().counter || 0;
       }
 
-      if (!Array.isArray(this.auditLog)) {
-        console.warn('[loadAllData] auditLog não é array — inicializando.');
-      } else if (audit.length) {
-        this.auditLog.splice(0, this.auditLog.length, ...audit);
-      }
-
       this.dbReady = true;
 
-      await this.loadLogs();
-
-      // Inicia listener em tempo real APÓS a carga inicial
-      // (evita eventos duplicados do snapshot inicial vs getDocs)
-      this._initRealtimeOrders();
+      // loadLogs() é chamado em loadProtectedData() pós-auth.
+      // errorLogs requer isWorker() nas Security Rules — não pode
+      // ser lido aqui onde o usuário ainda não está autenticado.
 
     } catch (e) {
       console.error('[loadAllData] Firestore load error:', e);
@@ -323,6 +365,72 @@ const appDatabase = {
       } catch { /* logger também pode não estar pronto */ }
       this.showToast('Erro ao carregar dados. Verifique o console.', 'error', '❌');
       this.dbReady = true;
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // CARGA PÓS-AUTH — pedidos (worker/admin) e auditLog (admin)
+  //
+  // Chamado por auth.js → _initCloudAuth() após onAuthStateChanged resolver.
+  // Só executa se o usuário tiver a role necessária, evitando qualquer
+  // tentativa de leitura que as Security Rules iriam negar.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async loadProtectedData() {
+    // Sys Logs: worker e admin podem listar errorLogs
+    if (this.isCloudAdmin || this.isCloudWorker) {
+      try {
+        await this.loadLogs();
+      } catch (e) {
+        await this.logError(e.message || String(e), {
+          stack: e.stack || null, source: 'loadProtectedData:logs', type: 'dbReadError',
+        }, 'database');
+      }
+    }
+
+    // Pedidos: qualquer worker ou admin
+    if (this.isCloudAdmin || this.isCloudWorker) {
+      try {
+        if (!Array.isArray(this.orderHistory)) return;
+
+        const ordersSnap = await firestoreDb
+          .collection('orders')
+          .orderBy('timestamp', 'asc')
+          .get();
+
+        const orders = ordersSnap.docs.map(d => d.data());
+        if (orders.length) {
+          this.orderHistory.splice(0, this.orderHistory.length, ...orders);
+        }
+
+        // Inicia listener em tempo real — await garante que o uid-guard
+        // detecta mudança de usuário ocorrida durante a carga inicial.
+        await this._initRealtimeOrders();
+
+      } catch (e) {
+        await this.logError(e.message || String(e), {
+          stack: e.stack || null, source: 'loadProtectedData:orders', type: 'dbReadError',
+        }, 'database');
+      }
+    }
+
+    // AuditLog: somente admin
+    if (this.isCloudAdmin) {
+      try {
+        const auditSnap = await firestoreDb
+          .collection('auditLog')
+          .orderBy('timestamp', 'asc')
+          .get();
+
+        const audit = auditSnap.docs.map(d => d.data());
+        if (Array.isArray(this.auditLog) && audit.length) {
+          this.auditLog.splice(0, this.auditLog.length, ...audit);
+        }
+      } catch (e) {
+        await this.logError(e.message || String(e), {
+          stack: e.stack || null, source: 'loadProtectedData:auditLog', type: 'dbReadError',
+        }, 'database');
+      }
     }
   },
 };

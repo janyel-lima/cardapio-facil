@@ -1,7 +1,6 @@
 const appState = {
   darkMode: false, showSearch: false, searchQuery: '', activeTab: null,
-  showCart: false, showProductModal: false, showThemePicker: false,
-  showAdminLogin: false, showProductForm: false,
+  showCart: false, showProductModal: false, showThemePicker: false, showProductForm: false,
   showPixModal: false, showTutorial: false, tutorialStep: 0, dbReady: false,
 
   selectedPromoFilter: null,

@@ -70,5 +70,6 @@ node_modules/
 
 # Firebase — nunca commitar
 firescripts/manage-roles.js
+firescripts/serviceAccountKey.json
 
 .firebaserc

@@ -17,7 +17,7 @@ const appAdmin = {
   
 
   // ── Auditoria ──────────────────────────────────────────────────────────────
-  async addAudit(action, data = {}) {
+   async addAudit(action, data = {}) {
     const BUSINESS_EVENTS = new Set([
       'ORDER_PLACED', 'ORDER_STATUS_CHANGED', 'ORDER_EDITED',
       'PRODUCT_CREATED', 'PRODUCT_UPDATED', 'PRODUCT_DELETED',

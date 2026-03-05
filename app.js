@@ -156,7 +156,7 @@ this._loadUserProfile();
           }
         } catch (e) {
           this.logWarn(e.message || String(e), {
-            source: 'watcher:showAdminPanel', type: 'watcherError', stack: e.stack || null,
+             source: 'watcher:showAdminPanel', type: 'watcherError', stack: e.stack || null,
           }, 'app');
         }
       });
