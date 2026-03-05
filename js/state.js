@@ -1,105 +1,109 @@
+/* ═══════════════════════════════════════════════════════
+   CARDÁPIO DIGITAL PRO — js/state.js
+
+   SEED DATA REMOVIDA INTENCIONALMENTE.
+   Razão: ao iniciar com arrays populados, o Alpine persiste
+   o seed no Firebase na primeira mutação (via watcher diff),
+   corrompendo uma loja recém-criada com dados de demonstração.
+
+   Fluxo correto:
+     1. state.js declara arrays vazios / config em branco
+     2. loadAllData() tenta carregar do Firebase
+     3. Se Firebase vazio → arrays permanecem []
+     4. Snapshots _snapCat/Items/Promos são tirados pós-load
+        com [] → nenhum save espúrio é disparado
+     5. Admin configura a loja pelo painel → watchers detectam
+        diff real → Firebase é gravado pela primeira vez
+
+   Para testar com dados de exemplo, use:
+     node scripts/seed-emulator.js   (apenas no emulador local)
+═══════════════════════════════════════════════════════ */
+
 const appState = {
+
+  // ── UI ─────────────────────────────────────────────────────────────────────
   darkMode: false, showSearch: false, searchQuery: '', activeTab: null,
   showCart: false, showProductModal: false, showThemePicker: false, showProductForm: false,
   showPixModal: false, showTutorial: false, tutorialStep: 0, dbReady: false,
 
   selectedPromoFilter: null,
-  viewMode : 'grid',
-  loginEmail: '',
-  showClientLogin: false,
+  viewMode:            'grid',
+  loginEmail:          '',
+  showClientLogin:     false,
 
+  // ── Perfil / Login ─────────────────────────────────────────────────────────
+  showUserProfile:     false,
+  userProfileTab:      'profile',   // 'profile' | 'orders' | 'account'
+  loginNudgeDismissed: false,
+  showLoginNudge:      false,
 
-  // Adicione ao objeto de estado principal
-showUserProfile:        false,
-userProfileTab:         'profile',   // 'profile' | 'orders' | 'account'
-loginNudgeDismissed:    false,
-showLoginNudge:         false,       // controlado por timer em init()
+  userProfile: {
+    displayName: '',
+    phone:       '',
+  },
 
-// Perfil editável do usuário (salvo em localStorage por userId)
-userProfile: {
-  displayName: '',
-  phone:       '',
-},
-
-// ── Getter: pedidos do cliente atual ──────────────────────
-get myOrders() {
-  if (!this.isCloudAuthenticated) return [];
-  // Filtra pelo userId do Dexie Cloud
-  return (this.orderHistory || [])
-    .filter(o => o.ownerId === this.cloudUser?.userId || o.clientEmail === this.cloudUser?.email)
-    .slice()
-    .reverse();
-},
-
-// ── Getter: inicial do avatar ─────────────────────────────
-get userAvatarInitial() {
-  const name = this.userProfile.displayName || this.cloudUser?.email || '?';
-  return name.charAt(0).toUpperCase();
-},
-
-// ── Getter: label curto da role ───────────────────────────
-get userRoleLabel() {
-  if (this.isCloudAdmin)  return { text: 'Admin',     color: '#ef4444', bg: 'rgba(239,68,68,.12)'  };
-  if (this.isCloudWorker) return { text: 'Atendente', color: '#f59e0b', bg: 'rgba(245,158,11,.12)' };
-  if (this.isCloudClient) return { text: 'Cliente',   color: '#3b82f6', bg: 'rgba(59,130,246,.12)' };
-  return null;
-},
+  // ── PIX ────────────────────────────────────────────────────────────────────
   pixStatus: 'pending', pixCopied: false, pixCountdown: 300, _pixTimer: null,
+
+  // ── Modal de produto ───────────────────────────────────────────────────────
   selectedProduct: null, modalQty: 1, modalNote: '', modalSelectedComplements: {},
 
-  cart: [],
-  checkout: { name: '', phone: '', address: '', complement: '', deliveryType: 'delivery', payment: 'pix' },
-  
-  couponInput: '', appliedCoupon: null,
+  // ── Carrinho ───────────────────────────────────────────────────────────────
+  cart:          [],
+  checkout:      { name: '', phone: '', address: '', complement: '', deliveryType: 'delivery', payment: 'pix' },
+  couponInput:   '',
+  appliedCoupon: null,
 
-  isAdmin: false, adminTab: 'store',
+  // ── Admin ──────────────────────────────────────────────────────────────────
+  isAdmin:  false,
+  adminTab: 'store',
+
   get adminTabs() {
-  const all = [
-    { id: 'store',         icon: '🏪', name: 'Loja'       },
-    { id: 'categories',    icon: '🏷️', name: 'Categorias' },
-    { id: 'products',      icon: '🛍️', name: 'Produtos'   },
-    { id: 'promos',        icon: '🔥', name: 'Promoções'  },
-    { id: 'order-manager', icon: '⚙️', name: 'Pedidos'    },
-    { id: 'orders',        icon: '📋', name: 'Histórico'  },
-    { id: 'reports',       icon: '📊', name: 'Relatórios' },
-    { id: 'syslogs',       icon: '🪲', name: 'Logs'       },
-  ];
+    const all = [
+      { id: 'store',         icon: '🏪', name: 'Loja'       },
+      { id: 'categories',    icon: '🏷️', name: 'Categorias' },
+      { id: 'products',      icon: '🛍️', name: 'Produtos'   },
+      { id: 'promos',        icon: '🔥', name: 'Promoções'  },
+      { id: 'order-manager', icon: '⚙️', name: 'Pedidos'    },
+      { id: 'orders',        icon: '📋', name: 'Histórico'  },
+      { id: 'reports',       icon: '📊', name: 'Relatórios' },
+      { id: 'syslogs',       icon: '🪲', name: 'Logs'       },
+    ];
 
-  if (this.isCloudAdmin) return all;
+    if (this.isCloudAdmin)  return all;
+    if (this.isCloudWorker) return all.filter(t => ['order-manager', 'orders'].includes(t.id));
+    return [];
+  },
 
-  if (this.isCloudWorker) {
-    return all.filter(t => ['order-manager', 'orders'].includes(t.id));
-  }
-
-  return [];
-},
-
+  // ── Formulários de edição ──────────────────────────────────────────────────
   editingProduct: {},
   newGroup:       { name: '', type: 'multiple', required: false, min: 0, max: 3, options: [] },
   newGroupOption: { name: '', price: 0 },
   newCategory:    { name: '', icon: '' },
   newPromo:       { name: '', type: 'percentage', value: 0, code: '', minOrder: 0, expiresAt: '' },
 
-  // FIX: orderHistory e auditLog DEVEM ser declarados como arrays aqui.
-  // database.js::loadAllData e admin.js::addAudit nunca reatribuem a referência
-  // (evitando quebrar o proxy do Alpine) — eles sempre mutam esses arrays via
-  // splice() / push(). Se esses campos não existirem ou não forem arrays antes
-  // do merge com os outros módulos, as operações de persistência vão falhar.
+  // ── Dados reativos — NUNCA reatribuir a referência, sempre usar splice/push ─
+  // Declarados como arrays vazios para que loadAllData() controle o primeiro
+  // populate; watchers medem diff pós-load → nenhum save espúrio no boot.
   orderHistory: [],
   orderCounter: 0,
   auditLog:     [],
 
-  // ── Sys Logs ─────────────────────────────────────────────────
-errorLogs:       [],   // DEVE ser [] aqui — nunca reatribuir
-logFilter:       'all',
-logSearch:       '',
-logDetailId:     null,
-logClearConfirm: false,
-_logSessionErrors: 0,
+  // ── Sys Logs ───────────────────────────────────────────────────────────────
+  errorLogs:         [],
+  logFilter:         'all',
+  logSearch:         '',
+  logDetailId:       null,
+  logClearConfirm:   false,
+  _logSessionErrors: 0,
 
-  toast: { visible: false, message: '', type: 'success', icon: '✓' }, _toastTimer: null,
+  // ── Toast ──────────────────────────────────────────────────────────────────
+  toast: { visible: false, message: '', type: 'success', icon: '✓' },
+  _toastTimer: null,
 
-  currentTheme: { id: 'red', name: 'Vermelho', accent: '#ef4444' }, customAccent: '#ef4444',
+  // ── Tema ───────────────────────────────────────────────────────────────────
+  currentTheme: { id: 'red', name: 'Vermelho', accent: '#ef4444' },
+  customAccent: '#ef4444',
   themes: [
     { id: 'red',    name: 'Vermelho', accent: '#ef4444', hover: '#dc2626', rgb: '239,68,68'   },
     { id: 'orange', name: 'Laranja',  accent: '#f97316', hover: '#ea580c', rgb: '249,115,22'  },
@@ -110,12 +114,61 @@ _logSessionErrors: 0,
     { id: 'violet', name: 'Violeta',  accent: '#8b5cf6', hover: '#7c3aed', rgb: '139,92,246'  },
     { id: 'pink',   name: 'Rosa',     accent: '#ec4899', hover: '#db2777', rgb: '236,72,153'  },
   ],
+
   paymentMethods: [
     { id: 'pix',  name: 'PIX',      icon: '🔑' },
     { id: 'card', name: 'Cartão',   icon: '💳' },
     { id: 'cash', name: 'Dinheiro', icon: '💵' },
   ],
 
+  // ── Config da loja — valores em branco para loja nova ─────────────────────
+  //
+  // loadAllData() sobrescreve com o que vier do Firebase.
+  // Se Firebase vazio (primeira vez), o admin preenche pelo painel
+  // e saveConfig() grava no Firebase — sem dados fictícios persistidos.
+  config: {
+    restaurantName: '',
+    city:           '',
+    whatsapp:       '',
+    pixKey:         '',
+    deliveryFee:    0,
+    minOrder:       0,
+    deliveryTime:   '',
+    isOpen:         false,   // começa fechada até o admin configurar e abrir
+    adminPass:      'admin123',
+  },
+
+  // ── Dados do cardápio — vazios para loja nova ──────────────────────────────
+  //
+  // Preenchidos exclusivamente via painel admin ou loadAllData() (Firebase).
+  // Para popular com dados de demonstração no emulador:
+  //   node scripts/seed-emulator.js
+  categories: [],
+  items:       [],
+  promotions:  [],
+
+  // ── Getters de perfil / auth ───────────────────────────────────────────────
+  get myOrders() {
+    if (!this.isCloudAuthenticated) return [];
+    return (this.orderHistory || [])
+      .filter(o => o.ownerId === this.cloudUser?.userId || o.clientEmail === this.cloudUser?.email)
+      .slice()
+      .reverse();
+  },
+
+  get userAvatarInitial() {
+    const name = this.userProfile.displayName || this.cloudUser?.email || '?';
+    return name.charAt(0).toUpperCase();
+  },
+
+  get userRoleLabel() {
+    if (this.isCloudAdmin)  return { text: 'Admin',     color: '#ef4444', bg: 'rgba(239,68,68,.12)'  };
+    if (this.isCloudWorker) return { text: 'Atendente', color: '#f59e0b', bg: 'rgba(245,158,11,.12)' };
+    if (this.isCloudClient) return { text: 'Cliente',   color: '#3b82f6', bg: 'rgba(59,130,246,.12)' };
+    return null;
+  },
+
+  // ── Tutorial ───────────────────────────────────────────────────────────────
   tutorialSteps: [
     {
       group: 'setup', groupLabel: 'Configuração', groupIcon: '⚙️',
@@ -212,7 +265,7 @@ _logSessionErrors: 0,
       group: 'orders', groupLabel: 'Pedidos', groupIcon: '📦',
       icon: '🗂️', title: 'Gestor de Pedidos — Kanban',
       content: 'A view "Kanban" exibe colunas por status com todos os pedidos do dia. Ideal para uma visão panorâmica da operação.',
-      tip: 'O Kanban atualiza a cada 8 segundos e emite um som de alerta quando um novo pedido chega.',
+      tip: 'O Kanban atualiza em tempo real via Firestore onSnapshot e emite um som de alerta quando um novo pedido chega.',
       visual: 'kanban',
     },
     {
@@ -266,381 +319,47 @@ _logSessionErrors: 0,
     },
   ],
 
-  config: {
-    restaurantName: 'Hamburgueria do Vale',
-    city:           'Arapiraca, AL',
-    whatsapp:       '5582999999999',
-    pixKey:         'contato@hamburgeriavale.com.br',
-    deliveryFee:    6.00,
-    minOrder:       25.00,
-    deliveryTime:   '30-45 min',
-    isOpen:         true,
-    adminPass:      'admin123',
+  // ── Helpers de perfil / checkout ───────────────────────────────────────────
+  _loadUserProfile() {
+    const uid = this.cloudUser?.userId;
+    if (!uid) return;
+    try {
+      const saved = localStorage.getItem(`userProfile:${uid}`);
+      if (saved) Object.assign(this.userProfile, JSON.parse(saved));
+    } catch { /* JSON inválido — ignora */ }
   },
 
-  /* ── CATEGORIES (seed) ── */
-  categories: [
-    { id: 'burgers',         name: 'Burgers',        icon: '🍔', active: true },
-    { id: 'bebidas',         name: 'Bebidas',         icon: '🥤', active: true },
-    { id: 'combos',          name: 'Combos',          icon: '🎁', active: true },
-    { id: 'sobremesas',      name: 'Sobremesas',      icon: '🍩', active: true },
-    { id: 'acompanhamentos', name: 'Acompanhamentos', icon: '🍟', active: true },
-  ],
+  _saveUserProfile() {
+    const uid = this.cloudUser?.userId;
+    if (!uid) return;
+    try {
+      localStorage.setItem(`userProfile:${uid}`, JSON.stringify(this.userProfile));
+    } catch { /* quota excedida — ignora */ }
+  },
 
-  /* ── ITEMS (seed) ── */
-  items: [
-    {
-      id: 1, name: 'X-Arapiraca Master', category: 'burgers',
-      price: 28.50, promoPrice: null, promoId: null,
-      desc:  'Pão brioche artesanal, carne de sol desfiada 180g, queijo coalho grelhado, mel de engenho e cebola crispy.',
-      image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=500',
-      available: true, featured: true,
-      complements: [
-        { id: 'grp-point', name: 'Ponto da Carne', type: 'single', required: true, min: 1, max: 1,
-          options: [
-            { id: 'pt-mal', name: 'Mal passado', price: 0 },
-            { id: 'pt-med', name: 'Ao ponto',    price: 0 },
-            { id: 'pt-bem', name: 'Bem passado', price: 0 },
-          ] },
-        { id: 'grp-add', name: 'Adicionais', type: 'multiple', required: false, min: 0, max: 4,
-          options: [
-            { id: 'ad-bacon',  name: 'Bacon artesanal', price: 4.00 },
-            { id: 'ad-ovo',    name: 'Ovo frito',       price: 2.50 },
-            { id: 'ad-queijo', name: 'Queijo extra',    price: 2.50 },
-            { id: 'ad-catup',  name: 'Cheddar cremoso', price: 3.00 },
-          ] },
-      ],
-    },
-    {
-      // FIX: item com promoPrice agora tem promoId vinculado à promoção id:4 (seed).
-      // Anteriormente promoPrice=19.90 sem promoId causava desconto financeiramente
-      // correto, mas sem rastreabilidade de qual promoção gerou o desconto nos relatórios.
-      id: 2, name: 'Classic Smash Burger', category: 'burgers',
-      price: 24.00, promoPrice: 19.90, promoId: 4,
-      desc:  'Dois smash patties 80g, queijo americano, picles, molho especial da casa e alface americana.',
-      image: 'https://images.unsplash.com/photo-1553979459-d2229ba7433b?w=500',
-      available: true, featured: false,
-      complements: [
-        { id: 'grp-smash-pt', name: 'Ponto da Carne', type: 'single', required: true, min: 1, max: 1,
-          options: [
-            { id: 'sp-mal', name: 'Mal passado', price: 0 },
-            { id: 'sp-med', name: 'Ao ponto',    price: 0 },
-            { id: 'sp-bem', name: 'Bem passado', price: 0 },
-          ] },
-        { id: 'grp-smash-add', name: 'Adicionais', type: 'multiple', required: false, min: 0, max: 3,
-          options: [
-            { id: 'sa-bacon', name: 'Bacon extra', price: 4.00 },
-            { id: 'sa-ovo',   name: 'Ovo frito',   price: 2.50 },
-            { id: 'sa-jal',   name: 'Jalapeño',    price: 1.50 },
-          ] },
-      ],
-    },
-    {
-      id: 3, name: 'BBQ Bacon Supremo', category: 'burgers',
-      price: 32.00, promoPrice: null, promoId: null,
-      desc:  'Pão brioche preto, blend 200g, bacon crocante artesanal, queijo cheddar, molho bbq defumado e jalapeños.',
-      image: 'https://images.unsplash.com/photo-1596956470007-2bf6095e7e16?w=500',
-      available: true, featured: true,
-      complements: [
-        { id: 'grp-bbq-pt', name: 'Ponto da Carne', type: 'single', required: true, min: 1, max: 1,
-          options: [
-            { id: 'bp-mal', name: 'Mal passado', price: 0 },
-            { id: 'bp-med', name: 'Ao ponto',    price: 0 },
-            { id: 'bp-bem', name: 'Bem passado', price: 0 },
-          ] },
-        { id: 'grp-bbq-add', name: 'Adicionais', type: 'multiple', required: false, min: 0, max: 3,
-          options: [
-            { id: 'ba-ovo',   name: 'Ovo caipira',    price: 3.00 },
-            { id: 'ba-bacon', name: 'Bacon extra',     price: 4.00 },
-            { id: 'ba-pica',  name: 'Molho extra BBQ', price: 1.50 },
-          ] },
-      ],
-    },
-    {
-      id: 4, name: 'Veggie Especial', category: 'burgers',
-      price: 22.00, promoPrice: null, promoId: null,
-      desc:  'Hambúrguer de grão-de-bico e beterraba, queijo prato derretido, rúcula, tomate confit e maionese de ervas.',
-      image: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=500',
-      available: true, featured: false,
-      complements: [
-        { id: 'grp-veg-add', name: 'Adicionais', type: 'multiple', required: false, min: 0, max: 3,
-          options: [
-            { id: 'va-abac', name: 'Abacate',          price: 3.00 },
-            { id: 'va-houm', name: 'Homus extra',       price: 2.00 },
-            { id: 'va-tom',  name: 'Tomate seco extra', price: 1.50 },
-          ] },
-      ],
-    },
-    {
-      id: 5, name: 'Refrigerante Lata', category: 'bebidas',
-      price: 5.50, promoPrice: null, promoId: null,
-      desc:  'Coca-Cola, Guaraná Antártica, Sprite ou Fanta. 350ml gelado.',
-      image: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=500',
-      available: true, featured: false,
-      complements: [
-        { id: 'grp-ref-sabor', name: 'Sabor', type: 'single', required: true, min: 1, max: 1,
-          options: [
-            { id: 'rs-coca', name: 'Coca-Cola',         price: 0 },
-            { id: 'rs-gua',  name: 'Guaraná Antártica', price: 0 },
-            { id: 'rs-spr',  name: 'Sprite',            price: 0 },
-            { id: 'rs-fan',  name: 'Fanta Laranja',     price: 0 },
-          ] },
-      ],
-    },
-    {
-      id: 6, name: 'Suco Natural 500ml', category: 'bebidas',
-      price: 9.00, promoPrice: null, promoId: null,
-      desc:  'Caju, acerola, maracujá ou laranja. Fresquinho e sem conservantes.',
-      image: 'https://images.unsplash.com/photo-1621506289937-a8e4df240d0b?w=500',
-      available: true, featured: false,
-      complements: [
-        { id: 'grp-suco-sabor', name: 'Sabor', type: 'single', required: true, min: 1, max: 1,
-          options: [
-            { id: 'ss-caju',  name: 'Caju',     price: 0 },
-            { id: 'ss-acer',  name: 'Acerola',  price: 0 },
-            { id: 'ss-mara',  name: 'Maracujá', price: 0 },
-            { id: 'ss-laran', name: 'Laranja',  price: 0 },
-          ] },
-        { id: 'grp-suco-add', name: 'Opções', type: 'multiple', required: false, min: 0, max: 2,
-          options: [
-            { id: 'soac-mel',  name: 'Com mel',      price: 1.00 },
-            { id: 'soac-gen',  name: 'Com gengibre', price: 1.00 },
-            { id: 'soac-chia', name: 'Com chia',     price: 2.00 },
-          ] },
-      ],
-    },
-    {
-      id: 7, name: 'Milkshake Premium', category: 'bebidas',
-      price: 16.00, promoPrice: null, promoId: null,
-      desc:  'Morango, Oreo, Nutella ou Doce de leite. Feito na hora com sorvete artesanal.',
-      image: 'https://images.unsplash.com/photo-1572490122747-3968b75cc699?w=500',
-      available: true, featured: true,
-      complements: [
-        { id: 'grp-milk-sabor', name: 'Sabor', type: 'single', required: true, min: 1, max: 1,
-          options: [
-            { id: 'ms-mor',  name: 'Morango',       price: 0    },
-            { id: 'ms-oreo', name: 'Oreo',          price: 0    },
-            { id: 'ms-nut',  name: 'Nutella',       price: 2.00 },
-            { id: 'ms-ddl',  name: 'Doce de leite', price: 0    },
-          ] },
-        { id: 'grp-milk-add', name: 'Cobertura extra', type: 'multiple', required: false, min: 0, max: 2,
-          options: [
-            { id: 'ma-choc', name: 'Calda de chocolate', price: 2.00 },
-            { id: 'ma-gran', name: 'Granulado colorido',  price: 1.00 },
-            { id: 'ma-cho2', name: 'Chantilly',           price: 2.00 },
-          ] },
-      ],
-    },
-    {
-      id: 8, name: 'Combo Casal', category: 'combos',
-      price: 55.00, promoPrice: 49.90, promoId: 5,
-      desc:  '2 Burgers à escolha + Batata GG crocante + Refri 1L. Serve 2 pessoas.',
-      image: 'https://images.unsplash.com/photo-1594212699903-ec8a3eca50f5?w=500',
-      available: true, featured: true,
-      complements: [
-        { id: 'grp-cc-burger1', name: '1º Burger', type: 'single', required: true, min: 1, max: 1,
-          options: [
-            { id: 'cb1-x',     name: 'X-Arapiraca Master', price: 0 },
-            { id: 'cb1-smash', name: 'Classic Smash',       price: 0 },
-            { id: 'cb1-bbq',   name: 'BBQ Bacon Supremo',   price: 0 },
-          ] },
-        { id: 'grp-cc-burger2', name: '2º Burger', type: 'single', required: true, min: 1, max: 1,
-          options: [
-            { id: 'cb2-x',     name: 'X-Arapiraca Master', price: 0 },
-            { id: 'cb2-smash', name: 'Classic Smash',       price: 0 },
-            { id: 'cb2-bbq',   name: 'BBQ Bacon Supremo',   price: 0 },
-          ] },
-        { id: 'grp-cc-refri', name: 'Refrigerante 1L', type: 'single', required: true, min: 1, max: 1,
-          options: [
-            { id: 'cr-coca', name: 'Coca-Cola 1L',         price: 0 },
-            { id: 'cr-gua',  name: 'Guaraná Antártica 1L', price: 0 },
-          ] },
-      ],
-    },
-    {
-      id: 9, name: 'Combo Individual', category: 'combos',
-      price: 35.00, promoPrice: null, promoId: null,
-      desc:  '1 Burger à escolha + Batata M crocante + Refri 350ml.',
-      image: 'https://images.unsplash.com/photo-1561043433-aaf687c4cf04?w=500',
-      available: true, featured: false,
-      complements: [
-        { id: 'grp-ci-burger', name: 'Escolha o Burger', type: 'single', required: true, min: 1, max: 1,
-          options: [
-            { id: 'cib-x',     name: 'X-Arapiraca Master', price: 0    },
-            { id: 'cib-smash', name: 'Classic Smash',       price: 0    },
-            { id: 'cib-bbq',   name: 'BBQ Bacon Supremo',   price: 4.00 },
-            { id: 'cib-veg',   name: 'Veggie Especial',     price: 0    },
-          ] },
-        { id: 'grp-ci-refri', name: 'Refrigerante', type: 'single', required: true, min: 1, max: 1,
-          options: [
-            { id: 'cir-coca', name: 'Coca-Cola',         price: 0 },
-            { id: 'cir-gua',  name: 'Guaraná Antártica', price: 0 },
-            { id: 'cir-spr',  name: 'Sprite',            price: 0 },
-          ] },
-      ],
-    },
-    {
-      id: 10, name: 'Batata Frita G', category: 'acompanhamentos',
-      price: 14.00, promoPrice: null, promoId: null,
-      desc:  'Batata corte palito frita na hora. Temperada com sal defumado e alecrim. Serve 1-2 pessoas.',
-      image: 'https://images.unsplash.com/photo-1576107232684-1279f390859f?w=500',
-      available: true, featured: false,
-      complements: [
-        { id: 'grp-bat-molho', name: 'Molho para mergulhar', type: 'multiple', required: false, min: 0, max: 2,
-          options: [
-            { id: 'bm-mayo',  name: 'Maionese da casa',  price: 1.50 },
-            { id: 'bm-ranch', name: 'Ranch especial',    price: 2.00 },
-            { id: 'bm-bbq',   name: 'Molho BBQ',         price: 2.00 },
-            { id: 'bm-ketch', name: 'Ketchup artesanal', price: 1.50 },
-          ] },
-      ],
-    },
-    {
-      id: 11, name: 'Onion Rings', category: 'acompanhamentos',
-      price: 16.00, promoPrice: null, promoId: null,
-      desc:  'Anéis de cebola empanados no panko com molho ranch especial da casa.',
-      image: 'https://images.unsplash.com/photo-1541592106381-b31e9677c0e5?w=500',
-      available: true, featured: false,
-      complements: [],
-    },
-    {
-      id: 12, name: 'Brownie com Sorvete', category: 'sobremesas',
-      price: 18.00, promoPrice: null, promoId: null,
-      desc:  'Brownie de chocolate belga quentinho, sorvete de creme, calda de chocolate e granulado.',
-      image: 'https://images.unsplash.com/photo-1564355808539-22fda35bed7e?w=500',
-      available: true, featured: false,
-      complements: [
-        { id: 'grp-brow-sorvete', name: 'Sabor do Sorvete', type: 'single', required: true, min: 1, max: 1,
-          options: [
-            { id: 'bs-creme',   name: 'Creme',     price: 0 },
-            { id: 'bs-choc',    name: 'Chocolate', price: 0 },
-            { id: 'bs-morango', name: 'Morango',   price: 0 },
-          ] },
-        { id: 'grp-brow-add', name: 'Coberturas extras', type: 'multiple', required: false, min: 0, max: 2,
-          options: [
-            { id: 'ba-choc2', name: 'Calda extra',   price: 2.00 },
-            { id: 'ba-cho3',  name: 'Chantilly',     price: 2.00 },
-            { id: 'ba-nozes', name: 'Nozes picadas', price: 3.00 },
-          ] },
-      ],
-    },
-  ],
+  prefillCheckoutFromUser() {
+    const u  = this.cloudUser   || this.currentUser  || this.authUser || null;
+    const fb = (typeof firebase !== 'undefined' && typeof firebase.auth === 'function')
+      ? firebase.auth().currentUser : null;
+    const prof = this.userProfile || null;
 
-  /* ── PROMOTIONS (seed) ── */
-  promotions: [
-    {
-      id: 1, name: 'Happy Hour', type: 'percentage', scope: 'cart',
-      value: 15, minOrder: 0, expiresAt: '', active: true,
-    },
-    {
-      id: 2, name: 'Primeira Compra', type: 'coupon', scope: 'cart',
-      value: 10, code: 'PRIMEIRACOMPRA', minOrder: 30, expiresAt: '', active: true,
-    },
-    {
-      id: 3, name: 'Frete Grátis Fim de Semana', type: 'freeDelivery', scope: 'cart',
-      value: 0, minOrder: 40, expiresAt: '', active: false,
-    },
-    // FIX: promoção de item adicionada para corresponder ao promoId:4 do Classic Smash Burger (id:2).
-    // Sem esta entrada, o relatório de itens detalhados não conseguia resolver o nome/tipo da promoção.
-    {
-      id: 4, name: 'Smash Especial', type: 'fixed', scope: 'item',
-      value: 4.10, minOrder: 0, expiresAt: '', active: true,
-    },
-    // FIX: promoção de item para o Combo Casal (id:8, promoId:5).
-    {
-      id: 5, name: 'Combo Casal Promo', type: 'fixed', scope: 'item',
-      value: 5.10, minOrder: 0, expiresAt: '', active: true,
-    },
-  ],
-
-  // ── Perfil do usuário: carrega/salva por userId ──────────────────
-_loadUserProfile() {
-  const uid = this.cloudUser?.userId;
-  if (!uid) return;
-  try {
-    const saved = localStorage.getItem(`userProfile:${uid}`);
-    if (saved) Object.assign(this.userProfile, JSON.parse(saved));
-  } catch { /* JSON inválido — ignora */ }
-},
-
-_saveUserProfile() {
-  const uid = this.cloudUser?.userId;
-  if (!uid) return;
-  try {
-    localStorage.setItem(`userProfile:${uid}`, JSON.stringify(this.userProfile));
-  } catch { /* quota excedida — ignora */ }
-},
-
-// ═══════════════════════════════════════════════════════════════════════════
-// AUTO-PREENCHIMENTO DO CHECKOUT — adicionar ao objeto appData (ou equivalente)
-// ═══════════════════════════════════════════════════════════════════════════
-//
-// COMO USAR:
-//   1. Cole este método dentro do objeto Alpine principal (appData / app / etc.)
-//   2. No div externo do carrinho, adicione o x-effect:
-//        x-effect="if(showCart && isCloudAuthenticated) prefillCheckoutFromUser()"
-//   3. Substitua os inputs de nome e telefone pelos blocos HTML abaixo.
-//   4. Garanta que `checkout` tenha os flags: _namePrefilled, _phonePrefilled
-//      (inicialize como false no reset do checkout).
-//
-// FONTES lidas (em ordem de prioridade, as primeiras ganham):
-//   • this.cloudUser / this.currentUser / this.authUser   (objeto Alpine)
-//   • firebase.auth().currentUser                         (Firebase Auth SDK)
-//   • this.userProfile                                    (Firestore profile)
-//
-// Só preenche se o campo ainda estiver vazio — nunca sobrescreve digitação.
-// ═══════════════════════════════════════════════════════════════════════════
-
-prefillCheckoutFromUser() {
-  // Objeto do usuário autenticado (Alpine)
-  const u =
-    this.cloudUser    ||
-    this.currentUser  ||
-    this.authUser     ||
-    null;
-
-  // Firebase Auth currentUser
-  const fb =
-    (typeof firebase !== 'undefined' && typeof firebase.auth === 'function')
-      ? firebase.auth().currentUser
-      : null;
-
-  // Firestore profile (opcional)
-  const prof = this.userProfile || null;
-
-  // ── Nome ──────────────────────────────────────────────────────────────────
-  const nameEmpty = !this.checkout.name || !this.checkout.name.trim();
-  if (nameEmpty) {
-    const name =
-      u?.name         ||
-      u?.displayName  ||
-      fb?.displayName ||
-      prof?.name      ||
-      '';
-
-    if (name.trim()) {
-      this.checkout.name           = name.trim();
-      this.checkout._namePrefilled = true;
+    const nameEmpty = !this.checkout.name?.trim();
+    if (nameEmpty) {
+      const name = u?.name || u?.displayName || fb?.displayName || prof?.name || '';
+      if (name.trim()) {
+        this.checkout.name           = name.trim();
+        this.checkout._namePrefilled = true;
+      }
     }
-  }
 
-  // ── Telefone ──────────────────────────────────────────────────────────────
-  const phoneEmpty = !this.checkout.phone || !this.checkout.phone.trim();
-  if (phoneEmpty) {
-    const phone =
-      u?.phone        ||
-      u?.phoneNumber  ||
-      u?.whatsapp     ||
-      fb?.phoneNumber ||
-      prof?.phone     ||
-      prof?.phoneNumber ||
-      '';
-
-    if (phone.trim()) {
-      this.checkout.phone           = phone.trim();
-      this.checkout._phonePrefilled = true;
+    const phoneEmpty = !this.checkout.phone?.trim();
+    if (phoneEmpty) {
+      const phone = u?.phone || u?.phoneNumber || u?.whatsapp ||
+                    fb?.phoneNumber || prof?.phone || prof?.phoneNumber || '';
+      if (phone.trim()) {
+        this.checkout.phone           = phone.trim();
+        this.checkout._phonePrefilled = true;
+      }
     }
-  }
-},
+  },
 };
-

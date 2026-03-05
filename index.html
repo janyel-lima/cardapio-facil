@@ -277,167 +277,167 @@
   </div>
 </header>
 
-      <!-- ══════════════════════════════════════════════════════════════
-     PROMO BANNER ULTIMATE — wrap em linhas, sem scroll horizontal
-     Substitui o bloco .promo-banner existente.
-     Requer: filter-ultimate.css + style.css
-══════════════════════════════════════════════════════════════ -->
+    <!-- ══════════════════════════════════════════════════════════
+     FILTROS — Promoções + Categorias + Cross-filter label
+     Requer: promo-filter.js  (activePromos, selectedPromoFilter,
+             activeCategories, hasItemScopePromos,
+             promoFilterCount(), crossFilterLabel)
+══════════════════════════════════════════════════════════ -->
 
-<div x-show="activePromos.length > 0 && !searchQuery"
+<!-- ═══ WRAPPER ÚNICO — esconde tudo ao pesquisar ══════════ -->
+<div x-show="!searchQuery"
      x-transition:enter="transition ease-out duration-300"
      x-transition:enter-start="opacity-0 -translate-y-2"
      x-transition:enter-end="opacity-100 translate-y-0"
-     class="max-w-2xl mx-auto px-4 pt-4"
+     class="max-w-2xl mx-auto px-4 pt-4 space-y-3"
      style="display:none">
 
-  <div class="fub-wrap">
 
-    <!-- ── Brilho de fundo animado ── -->
-    <div class="fub-glow" aria-hidden="true"></div>
-    <div class="fub-shimmer" aria-hidden="true"></div>
+  <!-- ══ SEÇÃO 1 — PROMOÇÕES ══════════════════════════════ -->
+  <div x-show="activePromos.length > 0" style="display:none">
+    <div class="fub-wrap">
 
-    <!-- ── Cabeçalho ── -->
-    <div class="fub-header">
-      <span class="fub-icon" aria-hidden="true">🔥</span>
-      <div class="fub-header-text">
-        <span class="fub-label">Promoções Ativas</span>
-        <span class="fub-sub"
-              x-text="activePromos.length + (activePromos.length === 1 ? ' promoção disponível' : ' promoções disponíveis')">
+      <div class="fub-glow"    aria-hidden="true"></div>
+      <div class="fub-shimmer" aria-hidden="true"></div>
+      <div class="fub-orb fub-orb-1" aria-hidden="true"></div>
+      <div class="fub-orb fub-orb-2" aria-hidden="true"></div>
+      <div class="fub-orb fub-orb-3" aria-hidden="true"></div>
+      <div class="fub-orb-wave"      aria-hidden="true"></div>
+
+      <div class="fub-header">
+        <span class="fub-icon" aria-hidden="true">🔥</span>
+        <div class="fub-header-text">
+          <span class="fub-label">Promoções Ativas</span>
+          <span class="fub-sub"
+                x-text="activePromos.length + (activePromos.length === 1 ? ' promoção disponível' : ' promoções disponíveis')">
+          </span>
+        </div>
+
+        <span x-show="selectedPromoFilter !== null && selectedPromoFilter !== '__any_item_promo__'"
+              class="fub-badge"
+              style="display:none"
+              x-text="promoFilterCount(selectedPromoFilter) + (promoFilterCount(selectedPromoFilter) === 1 ? ' item' : ' itens')">
         </span>
+        <span x-show="selectedPromoFilter === null"
+              class="fub-badge"
+              x-text="activePromos.length">
+        </span>
+
+        <button x-show="selectedPromoFilter !== null"
+                @click="selectedPromoFilter = null"
+                class="fu-clear"
+                style="display:none">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 6 6 18M6 6l12 12"/>
+          </svg>
+          Limpar
+        </button>
       </div>
 
-      <!-- ── Badge de contagem filtrada (aparece quando há filtro ativo) ── -->
-      <span x-show="selectedPromoFilter !== null && selectedPromoFilter !== '__any_item_promo__'"
-            class="fub-badge"
+      <div class="fub-rule" aria-hidden="true"></div>
+
+      <div class="fub-carousel">
+        <button @click="$refs.fubPromoTrack.scrollBy({left:-220,behavior:'smooth'})"
+                class="fu-arrow fu-arrow-l" aria-label="Rolar para esquerda">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 19l-7-7 7-7"/>
+          </svg>
+        </button>
+
+        
+<div x-ref="fubPromoTrack" class="fub-track">
+  <template x-for="promo in activePromos" :key="promo.id">
+
+    <div class="fub-pcard"
+         :class="{
+           'fub-pcard-active':      selectedPromoFilter === promo.id,
+           'fub-pcard-delivery':    promo.type === 'freeDelivery',
+           'fub-pcard-percentage':  promo.type === 'percentage',
+           'fub-pcard-fixed':       promo.type === 'fixed',
+         }"
+         @click="selectedPromoFilter = (selectedPromoFilter === promo.id ? null : promo.id)">
+
+      <!-- Perfuração lateral esquerda -->
+      <div class="fub-pcard-perf" aria-hidden="true"></div>
+
+      <!-- Valor em destaque -->
+      <div class="fub-pcard-value">
+        <span x-show="promo.type === 'percentage'"  style="display:none">
+          <span class="fub-pcard-num" x-text="promo.value"></span>
+          <span class="fub-pcard-unit">%</span>
+        </span>
+        <span x-show="promo.type === 'fixed'" style="display:none">
+          <span class="fub-pcard-unit fub-pcard-unit-pre">R$</span>
+          <span class="fub-pcard-num" x-text="promo.value"></span>
+        </span>
+        <span x-show="promo.type === 'freeDelivery'" style="display:none"
+              class="fub-pcard-icon-lg">🚚</span>
+        <span x-show="promo.type === 'coupon'" style="display:none"
+              class="fub-pcard-icon-lg">✂️</span>
+      </div>
+
+      <!-- Label OFF / Frete Grátis -->
+      <div class="fub-pcard-off"
+           x-text="promo.type === 'freeDelivery' ? 'Frete Grátis'
+                 : promo.type === 'coupon'        ? 'Cupom'
+                 : 'OFF'">
+      </div>
+
+      <!-- Divisor tracejado -->
+      <div class="fub-pcard-dash" aria-hidden="true"></div>
+
+      <!-- Nome da promoção -->
+      <div class="fub-pcard-name" x-text="promo.name"></div>
+
+      <!-- Contagem de itens — badge flutuante top-right -->
+      <span class="fub-pcard-count"
+            x-show="promo.type !== 'freeDelivery' && promo.scope !== 'cart'"
             style="display:none"
-            x-text="promoFilterCount(selectedPromoFilter) + (promoFilterCount(selectedPromoFilter) === 1 ? ' item' : ' itens')">
-      </span>
-      <span x-show="selectedPromoFilter === null"
-            class="fub-badge"
-            x-text="activePromos.length">
+            x-text="promoFilterCount(promo.id) + (promoFilterCount(promo.id) === 1 ? ' item' : ' itens')">
       </span>
 
-      <!-- ── Botão limpar filtro ── -->
-      <button x-show="selectedPromoFilter !== null"
-              @click="selectedPromoFilter = null"
-              class="fu-clear"
-              style="display:none">
-        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M18 6 6 18M6 6l12 12"/>
+      <!-- Ícone de check quando ativo -->
+      <span class="fub-pcard-check" aria-hidden="true">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="3.5"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 6L9 17l-5-5"/>
         </svg>
-        Limpar
-      </button>
+      </span>
+
     </div>
 
-   
-    <!-- ── Divisor interno ── -->
-<div class="fub-rule" aria-hidden="true"></div>
+  </template>
+</div>
 
-<!-- ── Orbs decorativos ── -->
-<div class="fub-orb fub-orb-1" aria-hidden="true"></div>
-<div class="fub-orb fub-orb-2" aria-hidden="true"></div>
-<div class="fub-orb fub-orb-3" aria-hidden="true"></div>
-<div class="fub-orb-wave"      aria-hidden="true"></div>
+        <button @click="$refs.fubPromoTrack.scrollBy({left:220,behavior:'smooth'})"
+                class="fu-arrow fu-arrow-r" aria-label="Rolar para direita">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 5l7 7-7 7"/>
+          </svg>
+        </button>
 
-<!-- ── Carousel de chips ── -->
-<div class="fub-carousel">
-  <button @click="$refs.fubPromoTrack.scrollBy({left:-220,behavior:'smooth'})"
-          class="fu-arrow fu-arrow-l" aria-label="Rolar para esquerda">
-    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-         stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M15 19l-7-7 7-7"/>
-    </svg>
-  </button>
-
-  <div x-ref="fubPromoTrack" class="fub-track">
-    <template x-for="promo in activePromos" :key="promo.id">
-      <div class="fub-chip"
-           :class="{
-             'fu-chip-active-blue':   selectedPromoFilter === promo.id && promo.type === 'freeDelivery',
-             'fu-chip-active-accent': selectedPromoFilter === promo.id && promo.type !== 'freeDelivery'
-           }"
-           @click="selectedPromoFilter = (selectedPromoFilter === promo.id ? null : promo.id)">
-        <span class="fub-chip-icon"
-              x-text="promo.type==='freeDelivery'?'🚚':promo.type==='percentage'?'🏷️':promo.type==='fixed'?'💸':'✨'">
-        </span>
-        <span class="fub-chip-name" x-text="promo.name"></span>
-        <span class="fub-chip-value">
-          <span x-show="promo.type==='percentage'" style="display:none" x-text="'−'+promo.value+'%'"></span>
-          <span x-show="promo.type==='fixed'"      style="display:none" x-text="'−'+formatMoney(promo.value)"></span>
-          <span x-show="promo.type==='freeDelivery'" style="display:none">Grátis</span>
-        </span>
-        <span class="fu-chip-badge" x-text="promoFilterCount(promo.id)"></span>
+        <div class="fub-fade-l"></div>
+        <div class="fub-fade-r"></div>
       </div>
-    </template>
+
+    </div>
   </div>
 
-  <button @click="$refs.fubPromoTrack.scrollBy({left:220,behavior:'smooth'})"
-          class="fu-arrow fu-arrow-r" aria-label="Rolar para direita">
-    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-         stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M9 5l7 7-7 7"/>
-    </svg>
-  </button>
 
-  <div class="fub-fade-l"></div>
-  <div class="fub-fade-r"></div>
-</div>
-
-  </div>
-</div>
-
-    
-      
-
-    <div x-show="!showSearch || !searchQuery" class="max-w-2xl mx-auto px-4 pb-3">
-       
-
- <!--
-  ══════════════════════════════════════════════════════════════════
-  FILTRO ULTIMATE v6.0 — TRUE DELUXE HTML
-  
-  ① Substitui completamente o bloco <div x-show="!searchQuery" ...>
-     do arquivo de filtros atual.
-  ② Requer: filter-ultimate.css carregado após style.css
-  ③ Usa as mesmas variáveis Alpine do app original:
-     activePromos, selectedPromoFilter, activeTab,
-     activeCategories, hasItemScopePromos,
-     promoFilterCount(), formatMoney(), crossFilterLabel
-  ══════════════════════════════════════════════════════════════════
--->
-
-<!-- ═══ FILTRO PRINCIPAL ════════════════════════════════════════ -->
-<div x-show="!searchQuery"
-     class="max-w-3xl mx-auto pt-3 pb-2"
-     style="display:none">
-
-
-
-
- 
-
-
-<!-- ══ SEÇÃO 2 — CATEGORIAS ════════════════════════════════ -->
-
-
-<div class="max-w-2xl mx-auto pt-3 pb-2"
-     x-show="!searchQuery"
-     x-transition:enter="transition ease-out duration-300"
-     x-transition:enter-start="opacity-0 -translate-y-2"
-     x-transition:enter-end="opacity-100 translate-y-0"
-     style="display:none">
-
+  <!-- ══ SEÇÃO 2 — CATEGORIAS ════════════════════════════ -->
   <div class="fuc-wrap">
 
-    <!-- ── Glow ambiente ── -->
-    <div class="fuc-glow" aria-hidden="true"></div>
+    <div class="fuc-glow"    aria-hidden="true"></div>
     <div class="fuc-shimmer" aria-hidden="true"></div>
-<div class="fuc-orb fuc-orb-1" aria-hidden="true"></div>
-<div class="fuc-orb fuc-orb-2" aria-hidden="true"></div>
-<div class="fuc-orb fuc-orb-3" aria-hidden="true"></div>
-<div class="fuc-orb-wave"      aria-hidden="true"></div>
-    <!-- ── Cabeçalho ── -->
+    <div class="fuc-orb fuc-orb-1" aria-hidden="true"></div>
+    <div class="fuc-orb fuc-orb-2" aria-hidden="true"></div>
+    <div class="fuc-orb fuc-orb-3" aria-hidden="true"></div>
+    <div class="fuc-orb-wave"      aria-hidden="true"></div>
+
     <div class="fuc-header">
       <span class="fuc-icon" aria-hidden="true">🍽️</span>
       <div class="fuc-header-text">
@@ -473,12 +473,9 @@
       </button>
     </div>
 
-    <!-- ── Divisor ── -->
     <div class="fuc-rule" aria-hidden="true"></div>
 
-    <!-- ── Carousel ── -->
     <div class="fuc-carousel">
-
       <button @click="$refs.fucCatTrack.scrollBy({left:-220,behavior:'smooth'})"
               class="fu-arrow fu-arrow-l" aria-label="Rolar para esquerda">
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -489,37 +486,50 @@
 
       <div x-ref="fucCatTrack" class="fuc-track">
 
-        <!-- Todos -->
-        <button @click="activeTab = null; selectedPromoFilter = null"
-                class="fu-card"
-                :class="activeTab === null && selectedPromoFilter === null ? 'fu-card-solid' : ''">
-          <span class="fu-card-emoji">🏠</span>
-          <span class="fu-card-label">Todos</span>
-        </button>
+  <!-- ── Todos ── -->
+  <button @click="activeTab = null; selectedPromoFilter = null"
+          class="fu-card"
+          :class="activeTab === null ? 'fu-card-solid' : ''">
+    <span class="fu-card-emoji">🏠</span>
+    <span class="fu-card-label">Todos</span>
+    <!-- Badge: total de disponíveis, ou filtrado quando há promo ativa -->
+    <span class="fu-card-badge"
+          x-text="selectedPromoFilter
+            ? promoFilterCount(selectedPromoFilter)
+            : (items ?? []).filter(i => i.available).length">
+    </span>
+  </button>
 
-        <!-- Em promoção -->
-        <button x-show="hasItemScopePromos"
-                style="display:none"
-                @click="activeTab = null; selectedPromoFilter = (selectedPromoFilter === '__any_item_promo__' ? null : '__any_item_promo__')"
-                class="fu-card"
-                :class="selectedPromoFilter === '__any_item_promo__' ? 'fu-card-fire' : ''">
-          <span class="fu-card-emoji">🔥</span>
-          <span class="fu-card-label">Promoções</span>
-          <span class="fu-card-badge"
-                x-text="promoFilterCount('__any_item_promo__')"></span>
-        </button>
+  <!-- ── Categorias dinâmicas ── -->
+  <template x-for="cat in activeCategories" :key="cat.id">
+    <button @click="activeTab = (activeTab === cat.id ? null : cat.id)"
+            class="fu-card"
+            :class="[
+              activeTab === cat.id ? 'fu-card-solid' : '',
+              selectedPromoFilter && categoryCount(cat.id).filtered === 0 ? 'fu-card-dimmed' : ''
+            ]">
 
-        <!-- Categorias dinâmicas -->
-        <template x-for="cat in activeCategories" :key="cat.id">
-          <button @click="activeTab = (activeTab === cat.id ? null : cat.id)"
-                  class="fu-card"
-                  :class="activeTab === cat.id ? 'fu-card-solid' : ''">
-            <span class="fu-card-emoji" x-text="cat.icon || '📦'"></span>
-            <span class="fu-card-label" x-text="cat.name"></span>
-          </button>
-        </template>
+      <span class="fu-card-emoji" x-text="cat.icon || '📦'"></span>
+      <span class="fu-card-label" x-text="cat.name"></span>
 
-      </div>
+      <!-- Badge normal: total de disponíveis na categoria -->
+      <span x-show="!selectedPromoFilter"
+            class="fu-card-badge"
+            x-text="categoryCount(cat.id).total">
+      </span>
+
+      <!-- Badge filtrado: itens que passam no filtro de promo -->
+      <!-- Cor muda conforme há ou não itens nessa categoria -->
+      <span x-show="!!selectedPromoFilter"
+            class="fu-card-badge"
+            :class="categoryCount(cat.id).filtered > 0 ? 'fu-card-badge-match' : 'fu-card-badge-zero'"
+            x-text="categoryCount(cat.id).filtered">
+      </span>
+
+    </button>
+  </template>
+
+</div>
 
       <button @click="$refs.fucCatTrack.scrollBy({left:220,behavior:'smooth'})"
               class="fu-arrow fu-arrow-r" aria-label="Rolar para direita">
@@ -534,12 +544,55 @@
     </div>
 
   </div>
-</div>
 
-  
 
-</div>
-    </div>
+  <!-- ══ SEÇÃO 3 — CROSS-FILTER LABEL ════════════════════
+       Mostra resumo contextual quando categoria + promoção
+       estão ativos simultaneamente.
+       crossFilterLabel retorna null → bloco some sem layout shift.
+  ══════════════════════════════════════════════════════ -->
+  <div x-show="crossFilterLabel !== null"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0 translate-y-1"
+       x-transition:enter-end="opacity-100 translate-y-0"
+       x-transition:leave="transition ease-in duration-150"
+       x-transition:leave-start="opacity-100 translate-y-0"
+       x-transition:leave-end="opacity-0 translate-y-1"
+       style="display:none"
+       class="flex items-center justify-between gap-3 px-3 py-2 rounded-xl"
+       :style="`
+         background: color-mix(in srgb, var(--accent) 8%, var(--surface-muted));
+         border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+       `">
+
+    <span class="flex items-center gap-2 text-xs font-semibold"
+          style="color: var(--accent)">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M20 6H4M15 12H9M12 18h0"/>
+      </svg>
+      <span x-text="crossFilterLabel"></span>
+    </span>
+
+    <button @click="activeTab = null; selectedPromoFilter = null"
+            class="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg
+                   transition-all duration-150 hover:scale-105 active:scale-95"
+            :style="`
+              background: color-mix(in srgb, var(--accent) 15%, transparent);
+              color: var(--accent);
+            `"
+            aria-label="Limpar todos os filtros">
+      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M18 6 6 18M6 6l12 12"/>
+      </svg>
+      Limpar tudo
+    </button>
+
+  </div>
+
+
+</div><!-- /wrapper único -->
 </div>
     <main class="max-w-2xl mx-auto px-4 pb-28 pt-4">
         <div x-show="searchQuery" class="mb-4">
@@ -4415,24 +4468,22 @@
         <p class="text-[9px] font-bold uppercase tracking-widest px-1 mb-1.5"
            style="color:var(--text-muted)">Login rápido (emulador)</p>
 
-        <template x-for="mock in [
-          { label: '👑 Admin',   email: 'admin@test.com'   },
-          { label: '🧑‍💼 Worker', email: 'worker@test.com'  },
-          { label: '🙋 Cliente', email: 'cliente@test.com' },
-        ]" :key="mock.email">
+        <!-- usa devUsers de auth.js — fonte única de verdade com seed-emulator.js -->
+        <template x-for="u in devUsers" :key="u.email">
           <button
-            @click="_devQuickLogin(mock.email)"
+            @click="_devQuickLogin(u.email)"
+            :disabled="cloudSyncing"
             class="dev-mock-btn w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-semibold
-                   flex items-center justify-between gap-2"
-            :style="cloudUser?.email === mock.email
+                   flex items-center justify-between gap-2 disabled:opacity-40 disabled:cursor-wait"
+            :style="cloudUser?.email === u.email
               ? `background: color-mix(in srgb, var(--accent) 12%, var(--surface-muted));
                  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
                  color: var(--accent);`
               : `background: var(--surface-muted);
                  border: 1px solid var(--border);
                  color: var(--text-primary);`">
-            <span x-text="mock.label"></span>
-            <span x-show="cloudUser?.email === mock.email"
+            <span x-text="u.icon + ' ' + u.label"></span>
+            <span x-show="cloudUser?.email === u.email"
                   class="w-1.5 h-1.5 rounded-full flex-shrink-0"
                   style="background:var(--accent)"></span>
           </button>
@@ -4464,7 +4515,6 @@
     </div>
   </div>
 </template>
-
 <!-- ══════════════════════════════════════════════
      LOGIN NUDGE — aparece 3s após carregar para
      usuários não autenticados. Dispensável.

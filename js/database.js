@@ -36,10 +36,6 @@ const appDatabase = {
 
   // ─────────────────────────────────────────────────────────────────────────
   // HELPER PRIVADO — get com fallback automático para cache offline
-  //
-  // Tenta buscar do servidor. Se o cliente estiver offline (código
-  // 'unavailable' ou mensagem contendo 'offline'), tenta o cache local
-  // do Firestore em vez de lançar erro para o usuário.
   // ─────────────────────────────────────────────────────────────────────────
   async _getWithOfflineFallback(ref) {
     try {
@@ -54,7 +50,6 @@ const appDatabase = {
         try {
           return await ref.get({ source: 'cache' });
         } catch {
-          // Cache também vazio — retorna snap "vazio" sintético para não travar o init
           return { exists: false, data: () => null, docs: [] };
         }
       }
@@ -62,7 +57,6 @@ const appDatabase = {
     }
   },
 
-  // Versão para queries (collection.get())
   async _queryWithOfflineFallback(query) {
     try {
       return await query.get({ source: 'default' });
@@ -261,6 +255,12 @@ const appDatabase = {
 
   // ─────────────────────────────────────────────────────────────────────────
   // PEDIDOS — Tempo Real
+  //
+  // FIX (false for 'list' @ L63): getIdTokenResult(false) retornava o token
+  // em cache que ainda não carregava o custom claim de role recém-atribuído.
+  // Trocado para getIdTokenResult(true) → força round-trip ao servidor,
+  // garantindo que o Firestore SDK use o token com o claim correto ao
+  // montar o listener onSnapshot.
   // ─────────────────────────────────────────────────────────────────────────
 
   async _initRealtimeOrders() {
@@ -274,9 +274,16 @@ const appDatabase = {
 
     let role = '';
     try {
-      const tokenResult = await user.getIdTokenResult(false);
+      // FIX: forceRefresh=true garante que o claim de role já gravado pelo
+      // backend esteja presente no token que o Firestore usará para avaliar
+      // as Security Rules. Com false, o SDK podia retornar um token stale
+      // sem o claim, causando "false for 'list'" mesmo para admin/worker.
+      const tokenResult = await user.getIdTokenResult(/* forceRefresh= */ true);
       role = tokenResult.claims.role ?? '';
     } catch (e) {
+      await this.logError(e.message || String(e), {
+        stack: e.stack || null, source: '_initRealtimeOrders', type: 'authError',
+      }, 'database');
       return;
     }
 
@@ -316,11 +323,6 @@ const appDatabase = {
 
   // ─────────────────────────────────────────────────────────────────────────
   // CARGA INICIAL — dados públicos
-  //
-  // FIX (offline): usa _getWithOfflineFallback / _queryWithOfflineFallback
-  // para tentar o cache local quando o cliente estiver sem conexão.
-  // O app carrega normalmente a partir do cache; a sincronização acontece
-  // automaticamente quando a conexão for restabelecida.
   // ─────────────────────────────────────────────────────────────────────────
 
   async loadAllData() {
@@ -379,29 +381,16 @@ const appDatabase = {
 
   // ─────────────────────────────────────────────────────────────────────────
   // CARGA PÓS-AUTH — dados protegidos (pedidos, auditLog, adminPass)
-  //
-  // FIX (false for 'list' @ orders): o token JWT pode chegar ao onAuthStateChanged
-  // ainda sem os custom claims de role gravados pelo backend. A query ao Firestore
-  // é feita com o token stale, e as regras de segurança retornam false.
-  //
-  // Correção: força refresh do ID token antes de qualquer leitura protegida
-  // (getIdToken(true)), garantindo que os custom claims estejam presentes.
-  // Custo: 1 round-trip extra ao Google Auth por sessão — aceitável.
   // ─────────────────────────────────────────────────────────────────────────
 
   async loadProtectedData() {
     const user = firebaseAuth.currentUser;
 
     // ── Força refresh do token para garantir custom claims atualizados ──────
-    // Sem isso, claims gravados pelo backend após o login podem não estar
-    // refletidos no token que o Firestore usa para avaliar as regras.
     if (user) {
       try {
         await user.getIdToken(/* forceRefresh= */ true);
       } catch (e) {
-        // Falha no refresh (ex: offline) — continua com o token atual.
-        // Leituras protegidas podem falhar por permissão; cada bloco
-        // abaixo trata seu próprio erro independentemente.
         console.warn('[loadProtectedData] token refresh skipped:', e.message);
       }
     }
@@ -448,7 +437,6 @@ const appDatabase = {
         await this._initRealtimeOrders();
 
       } catch (e) {
-        // Distingue erro de permissão (rules) de outros erros de leitura
         const isPermission =
           e.code === 'permission-denied' ||
           (e.message || '').includes('false for');
@@ -461,7 +449,6 @@ const appDatabase = {
           isCloudWorker: this.isCloudWorker,
         }, 'database');
 
-        // Permissão negada mesmo após token refresh → avisa sem travar o app
         if (isPermission) {
           console.warn(
             '[loadProtectedData:orders] Permissão negada. ' +

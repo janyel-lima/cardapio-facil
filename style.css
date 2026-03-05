@@ -1791,3 +1791,396 @@ header {
   outline-offset: 2px;
   border-radius: 6px;
 }
+
+/* ── fu-card-dimmed: categoria sem itens no filtro atual ── */
+.fu-card-dimmed {
+  opacity: 0.38;
+  pointer-events: auto; /* ainda clicável para trocar de aba */
+  filter: grayscale(0.6);
+  transition: opacity 0.2s, filter 0.2s;
+}
+
+/* ── fu-card-badge-match: há itens que passam no filtro ── */
+.fu-card-badge-match {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* ── fu-card-badge-zero: sem itens no filtro ── */
+.fu-card-badge-zero {
+  background: rgba(150, 150, 150, 0.15);
+  color: var(--text-muted, #999);
+  font-weight: 600;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   FUB-PCARD — Promo Cards estilo cupom
+   Substitui as regras .fub-chip no style.css.
+   Adicionar após as regras .fub-track existentes.
+   Remove: .fub-chip, .fub-chip-icon, .fub-chip-name,
+           .fub-chip-value, .fu-chip-badge,
+           .fu-chip-active-accent, .fu-chip-active-blue
+═══════════════════════════════════════════════════════════════ */
+
+/* ── Oculta chips legados se ainda estiverem no DOM ── */
+.fub-chip { display: none !important; }
+
+
+/* ══════════════════════════════════════════════════════════════
+   BASE DO CARD
+══════════════════════════════════════════════════════════════ */
+.fub-pcard {
+  position: relative;
+  flex-shrink: 0;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+
+  width: 82px;
+  padding: 12px 10px 11px 16px; /* padding-left maior → espaço para perfuração */
+  border-radius: 12px;
+
+  background: rgba(255, 255, 255, 0.13);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 2px 10px rgba(0, 0, 0, 0.18);
+
+  cursor: pointer;
+  user-select: none;
+  overflow: hidden;
+
+  /* Entrada escalonada (herda do fub-track > * nth-child) */
+  animation: fubPcardIn 0.30s var(--ease-out) both;
+
+  transition:
+    background    180ms var(--ease-out),
+    border-color  180ms var(--ease-out),
+    box-shadow    180ms var(--ease-out),
+    transform     200ms var(--ease-spring),
+    filter        180ms var(--ease-out);
+}
+
+/* Reflexo interno no topo */
+.fub-pcard::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(160deg, rgba(255,255,255,.16) 0%, transparent 45%);
+  pointer-events: none;
+  transition: opacity 180ms;
+}
+
+.fub-pcard:hover {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.38);
+  transform: translateY(-3px) scale(1.02);
+  filter: drop-shadow(0 6px 14px rgba(0,0,0,.28));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.22),
+    0 6px 20px rgba(0,0,0,.22);
+}
+
+.fub-pcard:active {
+  transform: scale(0.95);
+  transition-duration: 80ms;
+}
+
+@keyframes fubPcardIn {
+  from { opacity: 0; transform: scale(0.86) translateY(8px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);   }
+}
+
+/* Herda os delays do fub-track */
+.fub-track > *:nth-child(1)  { animation-delay: .00s }
+.fub-track > *:nth-child(2)  { animation-delay: .05s }
+.fub-track > *:nth-child(3)  { animation-delay: .10s }
+.fub-track > *:nth-child(4)  { animation-delay: .15s }
+.fub-track > *:nth-child(5)  { animation-delay: .20s }
+.fub-track > *:nth-child(n+6){ animation-delay: .24s }
+
+
+/* ══════════════════════════════════════════════════════════════
+   PERFURAÇÃO LATERAL (estilo cupom)
+══════════════════════════════════════════════════════════════ */
+.fub-pcard-perf {
+  position: absolute;
+  left: -1px;          /* cola na borda esquerda */
+  top: 0;
+  bottom: 0;
+  width: 6px;
+
+  /* Série de semicírculos recortados simulando perfuração */
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent             0px,
+    transparent             6px,
+    rgba(0, 0, 0, 0.18)     6px,
+    rgba(0, 0, 0, 0.18)     7px,
+    transparent             7px,
+    transparent             13px
+  );
+
+  /* Linha vertical pontilhada de separação */
+  border-right: 1.5px dashed rgba(255, 255, 255, 0.28);
+}
+
+/* Versão alternativa com meios-círculos reais usando clip-path */
+/* (compatível com Chrome/Safari — fallback para FF é o repeating-linear-gradient) */
+@supports (clip-path: circle(50%)) {
+  .fub-pcard-perf {
+    background: none;
+    border-right: 1.5px dashed rgba(255, 255, 255, 0.28);
+  }
+  .fub-pcard-perf::before {
+    content: '';
+    position: absolute;
+    left: -4px;
+    top: 0;
+    bottom: 0;
+    width: 8px;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent        0px,
+      transparent        5px,
+      rgba(0,0,0,0.22)   5px,
+      rgba(0,0,0,0.22)   6px,
+      transparent        6px,
+      transparent        12px
+    );
+    pointer-events: none;
+  }
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   VALOR (número grande)
+══════════════════════════════════════════════════════════════ */
+.fub-pcard-value {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 1px;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+.fub-pcard-num {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  color: #fff;
+  text-shadow: 0 2px 8px rgba(0,0,0,.22);
+  line-height: 1;
+}
+
+.fub-pcard-unit {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1;
+  align-self: flex-start;
+  padding-top: 4px;
+}
+
+.fub-pcard-unit-pre {
+  align-self: flex-start;
+  padding-top: 4px;
+  padding-right: 1px;
+}
+
+.fub-pcard-icon-lg {
+  font-size: 24px;
+  line-height: 1;
+  display: block;
+  margin-bottom: 2px;
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   LABEL "OFF" / "Frete Grátis"
+══════════════════════════════════════════════════════════════ */
+.fub-pcard-off {
+  font-family: var(--font-display);
+  font-size: 8.5px;
+  font-weight: 900;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.70);
+  line-height: 1;
+  margin-bottom: 7px;
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   DIVISOR TRACEJADO
+══════════════════════════════════════════════════════════════ */
+.fub-pcard-dash {
+  width: 100%;
+  height: 1px;
+  border-top: 1.5px dashed rgba(255, 255, 255, 0.28);
+  margin-bottom: 7px;
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   NOME DA PROMOÇÃO
+══════════════════════════════════════════════════════════════ */
+.fub-pcard-name {
+  font-family: var(--font-body);
+  font-size: 9.5px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.80);
+  text-align: center;
+  letter-spacing: 0.01em;
+  line-height: 1.25;
+  word-break: break-word;
+  max-width: 100%;
+
+  /* Trunca em 2 linhas */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   BADGE DE CONTAGEM (top-right flutuante)
+══════════════════════════════════════════════════════════════ */
+.fub-pcard-count {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 7.5px;
+  font-weight: 800;
+  padding: 2px 5px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.80);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  transition:
+    background 180ms var(--ease-out),
+    color      180ms var(--ease-out);
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   CHECK ICON (aparece quando ativo)
+══════════════════════════════════════════════════════════════ */
+.fub-pcard-check {
+  position: absolute;
+  bottom: 7px;
+  right: 7px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.40);
+  opacity: 0;
+  transform: scale(0.6);
+  transition:
+    opacity   180ms var(--ease-out),
+    transform 220ms var(--ease-spring),
+    background 180ms var(--ease-out),
+    color      180ms var(--ease-out);
+  pointer-events: none;
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   ESTADO ATIVO
+══════════════════════════════════════════════════════════════ */
+.fub-pcard-active {
+  background: rgba(255, 255, 255, 0.90) !important;
+  border-color: rgba(255, 255, 255, 0.96) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,1),
+    0 0 0 2px rgba(255,255,255,.40),
+    0 6px 22px rgba(0,0,0,.22) !important;
+  transform: translateY(-3px) scale(1.03) !important;
+}
+
+.fub-pcard-active .fub-pcard-num     { color: var(--accent); text-shadow: none; }
+.fub-pcard-active .fub-pcard-unit    { color: var(--accent); }
+.fub-pcard-active .fub-pcard-off     { color: color-mix(in srgb, var(--accent) 80%, #000); }
+.fub-pcard-active .fub-pcard-name    { color: var(--accent); }
+.fub-pcard-active .fub-pcard-icon-lg { filter: none; }
+
+.fub-pcard-active .fub-pcard-dash {
+  border-top-color: rgba(var(--accent-rgb), 0.30);
+}
+.fub-pcard-active .fub-pcard-perf {
+  border-right-color: rgba(var(--accent-rgb), 0.28);
+}
+.fub-pcard-active .fub-pcard-count {
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent);
+  border-color: rgba(var(--accent-rgb), 0.22);
+}
+.fub-pcard-active .fub-pcard-check {
+  opacity: 1;
+  transform: scale(1);
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.40);
+}
+.fub-pcard-active::before { opacity: 0; } /* remove reflexo branco quando ativo */
+
+
+/* ══════════════════════════════════════════════════════════════
+   VARIANTES POR TIPO (cor sutil de fundo/borda)
+   Diferenciação visual sem cores específicas — usa opacidade
+══════════════════════════════════════════════════════════════ */
+
+/* Entrega grátis: leve tint azul */
+.fub-pcard-delivery:not(.fub-pcard-active) {
+  background: rgba(147, 197, 253, 0.12);
+  border-color: rgba(147, 197, 253, 0.22);
+}
+.fub-pcard-delivery:not(.fub-pcard-active) .fub-pcard-off {
+  color: rgba(186, 230, 253, 0.80);
+}
+
+/* Percentual: leve tint verde */
+.fub-pcard-percentage:not(.fub-pcard-active) {
+  background: rgba(167, 243, 208, 0.10);
+  border-color: rgba(167, 243, 208, 0.20);
+}
+
+/* Fixed: leve tint âmbar */
+.fub-pcard-fixed:not(.fub-pcard-active) {
+  background: rgba(253, 230, 138, 0.10);
+  border-color: rgba(253, 230, 138, 0.20);
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   DARK MODE
+══════════════════════════════════════════════════════════════ */
+.dark .fub-pcard {
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+.dark .fub-pcard:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+.dark .fub-pcard-active {
+  background: rgba(255, 255, 255, 0.88) !important;
+}

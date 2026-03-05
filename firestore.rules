@@ -23,8 +23,12 @@ service cloud.firestore {
       return isAuthed() ? request.auth.token.get('role', '') : '';
     }
 
+    // FIX: substituído `role() in ['admin', 'worker']` por `||` explícito.
+    // O operador `in` com lista literal tem comportamento instável em algumas
+    // versões do avaliador de regras (emulador e produção) — a forma canônica
+    // é usar comparações explícitas, que são avaliadas de forma determinística.
     function isAdmin()  { return role() == 'admin'; }
-    function isWorker() { return role() in ['admin', 'worker']; }
+    function isWorker() { return role() == 'admin' || role() == 'worker'; }
 
 
     // ── Config ────────────────────────────────────────────────────────────────
