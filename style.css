@@ -1766,3 +1766,28 @@ header {
   .dev-mock-btn { transition: background .12s, transform .1s, border-color .12s; }
   .dev-mock-btn:hover  { transform: translateX(3px); background: var(--surface-hover, color-mix(in srgb, var(--accent) 8%, var(--surface-muted))) !important; border-color: color-mix(in srgb, var(--accent) 30%, transparent) !important; }
   .dev-mock-btn:active { transform: scale(.96); }
+
+  
+/* Banner que aparece quando o formulário está em modo edição */
+.edit-mode-banner {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .4rem .75rem;
+  background: var(--accent-light, #fff3e0);
+  border-left: 3px solid var(--accent, #e85d04);
+  border-radius: 4px;
+  font-size: .875rem;
+  margin-bottom: .75rem;
+}
+.edit-mode-banner button {
+  margin-left: auto;
+}
+
+/* Destaque visual da linha em edição */
+.category-item--editing,
+.promo-item--editing {
+  outline: 2px solid var(--accent, #e85d04);
+  outline-offset: 2px;
+  border-radius: 6px;
+}

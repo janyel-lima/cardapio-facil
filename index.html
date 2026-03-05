@@ -747,103 +747,141 @@
 
                 <!-- ═══ CATEGORIES TAB ═══ -->
                 <div x-show="adminTab==='categories'" class="space-y-4" x-data="emojiPickerData()">
-                    <h2 class="admin-section-title">🏷️ Categorias</h2>
-                    <div class="admin-card">
-                        <h3 class="font-display font-bold text-text-primary mb-3 text-sm">Adicionar Categoria</h3>
-                        <div class="grid grid-cols-3 gap-2 mb-3">
-                            <input type="text" x-model="newCategory.name" placeholder="Nome *"
-                                class="form-input col-span-2">
+  <h2 class="admin-section-title">🏷️ Categorias</h2>
 
-                            <!-- ── EMOJI PICKER ── -->
-                            <div class="relative">
-                                <button type="button" @click="showEmojiPicker = !showEmojiPicker"
-                                    class="form-input w-full flex items-center justify-between gap-1 cursor-pointer select-none"
-                                    title="Escolher emoji">
-                                    <span class="text-xl leading-none" x-text="newCategory.icon || '📦'"></span>
-                                    <svg class="w-3 h-3 flex-shrink-0 opacity-50" fill="none" viewBox="0 0 24 24"
-                                        stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M19 9l-7 7-7-7" />
-                                    </svg>
-                                </button>
+  <div class="admin-card" id="category-form">
 
-                                <!-- Picker panel -->
-                                <div x-show="showEmojiPicker" x-transition:enter="transition ease-out duration-150"
-                                    x-transition:enter-start="opacity-0 scale-95"
-                                    x-transition:enter-end="opacity-100 scale-100"
-                                    @click.away="showEmojiPicker=false; emojiSearch=''"
-                                    class="absolute right-0 top-full mt-1.5 z-50 rounded-2xl shadow-2xl border border-border p-3 w-72"
-                                    style="background:var(--surface-card)">
+    <!-- Banner de edição -->
+    <div x-show="_catFormMode === 'edit'" x-cloak
+         class="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold mb-3"
+         style="background:var(--accent-light); border-left:3px solid var(--accent)">
+      <span>✏️ Editando: <strong x-text="newCategory.name"></strong></span>
+      <button @click="cancelCategoryEdit()"
+              class="ml-auto text-text-muted hover:text-text-primary transition-colors">
+        ✕ Cancelar
+      </button>
+    </div>
 
-                                    <!-- Search -->
-                                    <div class="relative mb-2">
-                                        <input type="text" x-model="emojiSearch"
-                                            placeholder="Buscar emoji (pizza, frango…)" @click.stop
-                                            class="form-input w-full text-xs !py-2 !pl-8">
-                                        <svg class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none"
-                                            fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
-                                        </svg>
-                                    </div>
+    <h3 class="font-display font-bold text-text-primary mb-3 text-sm"
+        x-text="_catFormMode === 'edit' ? '✏️ Editar Categoria' : 'Adicionar Categoria'"></h3>
 
-                                    <!-- Emoji grid -->
-                                    <div class="grid grid-cols-8 gap-0.5 max-h-52 overflow-y-auto rounded-xl p-1"
-                                        style="background:var(--surface-muted)">
-                                        <template x-for="em in filteredEmojis" :key="em.n">
-                                            <button type="button"
-                                                @click.stop="newCategory.icon = em.e; closeEmojiPicker()" :title="em.n"
-                                                class="w-8 h-8 flex items-center justify-center text-lg rounded-lg hover:scale-110 transition-transform cursor-pointer"
-                                                x-text="em.e">
-                                            </button>
-                                        </template>
-                                        <div x-show="filteredEmojis.length === 0"
-                                            class="col-span-8 text-center py-4 text-xs text-text-muted">
-                                            Nenhum emoji encontrado
-                                        </div>
-                                    </div>
+    <div class="grid grid-cols-3 gap-2 mb-3">
+      <input type="text" x-model="newCategory.name" placeholder="Nome *"
+          class="form-input col-span-2">
 
-                                    <!-- Clear selection -->
-                                    <button type="button" @click.stop="newCategory.icon = ''; closeEmojiPicker()"
-                                        class="mt-2 w-full text-[10px] text-text-muted hover:text-text-primary py-1 rounded-lg transition-colors"
-                                        style="background:var(--surface-muted)">
-                                        Limpar
-                                    </button>
-                                </div>
-                            </div>
-                            <!-- ── /EMOJI PICKER ── -->
-                        </div>
-                        <button @click="addCategory()" class="btn-primary w-full">+ Adicionar Categoria</button>
-                    </div>
+      <!-- ── EMOJI PICKER ── -->
+      <div class="relative">
+        <button type="button" @click="showEmojiPicker = !showEmojiPicker"
+            class="form-input w-full flex items-center justify-between gap-1 cursor-pointer select-none"
+            title="Escolher emoji">
+          <span class="text-xl leading-none" x-text="newCategory.icon || '📦'"></span>
+          <svg class="w-3 h-3 flex-shrink-0 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
 
-                    <div class="space-y-2">
-                        <template x-for="(cat, idx) in categories" :key="cat.id">
-                            <div class="admin-card flex items-center justify-between gap-3">
-                                <div class="flex items-center gap-3">
-                                    <span class="text-2xl" x-text="cat.icon||'📦'"></span>
-                                    <div>
-                                        <p class="font-bold text-text-primary" x-text="cat.name"></p>
-                                        <p class="text-xs text-text-muted">
-                                            <span x-text="items.filter(i=>i.category===cat.id).length"></span> item(s)
-                                        </p>
-                                    </div>
-                                </div>
-                                <div class="flex items-center gap-2">
+        <!-- Picker panel -->
+        <div x-show="showEmojiPicker" x-transition:enter="transition ease-out duration-150"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100"
+             @click.away="showEmojiPicker=false; emojiSearch=''"
+             class="absolute right-0 top-full mt-1.5 z-50 rounded-2xl shadow-2xl border border-border p-3 w-72"
+             style="background:var(--surface-card)">
 
-                                    <button @click="toggleCategory(cat)"
-                                        class="text-xs px-2 py-1 rounded-lg transition-colors"
-                                        :class="cat.active?'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400':'bg-gray-100 text-gray-500 dark:bg-gray-800'"
-                                        x-text="cat.active?'Ativa':'Inativa'">
-                                    </button>
-                                    <button @click="deleteCategory(idx)"
-                                        class="text-red-400 hover:text-red-600 text-sm px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20">
-                                        🗑️
-                                    </button>
-                                </div>
-                            </div>
-                        </template>
-                    </div>
-                </div>
+          <!-- Search -->
+          <div class="relative mb-2">
+            <input type="text" x-model="emojiSearch"
+                placeholder="Buscar emoji (pizza, frango…)" @click.stop
+                class="form-input w-full text-xs !py-2 !pl-8">
+            <svg class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none"
+                fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
+            </svg>
+          </div>
+
+          <!-- Emoji grid -->
+          <div class="grid grid-cols-8 gap-0.5 max-h-52 overflow-y-auto rounded-xl p-1"
+               style="background:var(--surface-muted)">
+            <template x-for="em in filteredEmojis" :key="em.n">
+              <button type="button"
+                  @click.stop="newCategory.icon = em.e; closeEmojiPicker()" :title="em.n"
+                  class="w-8 h-8 flex items-center justify-center text-lg rounded-lg hover:scale-110 transition-transform cursor-pointer"
+                  x-text="em.e">
+              </button>
+            </template>
+            <div x-show="filteredEmojis.length === 0"
+                 class="col-span-8 text-center py-4 text-xs text-text-muted">
+              Nenhum emoji encontrado
+            </div>
+          </div>
+
+          <!-- Clear selection -->
+          <button type="button" @click.stop="newCategory.icon = ''; closeEmojiPicker()"
+              class="mt-2 w-full text-[10px] text-text-muted hover:text-text-primary py-1 rounded-lg transition-colors"
+              style="background:var(--surface-muted)">
+            Limpar
+          </button>
+        </div>
+      </div>
+      <!-- ── /EMOJI PICKER ── -->
+    </div>
+
+    <!-- Botões de ação -->
+    <div class="flex gap-2">
+      <button @click="_catFormMode === 'edit' ? updateCategory() : addCategory()"
+              class="btn-primary flex-1"
+              x-text="_catFormMode === 'edit' ? '💾 Salvar Alterações' : '+ Adicionar Categoria'">
+      </button>
+      <button x-show="_catFormMode === 'edit'" x-cloak
+              @click="cancelCategoryEdit()"
+              class="px-4 py-2 rounded-xl text-sm font-semibold text-text-muted hover:text-text-primary transition-colors"
+              style="background:var(--surface-muted)">
+        Cancelar
+      </button>
+    </div>
+  </div>
+
+  <div class="space-y-2">
+    <template x-for="(cat, idx) in categories" :key="cat.id">
+      <div class="admin-card flex items-center justify-between gap-3 transition-all"
+           :class="_editingCatId === cat.id ? 'ring-2 ring-[var(--accent)]' : ''">
+
+        <div class="flex items-center gap-3">
+          <span class="text-2xl" x-text="cat.icon||'📦'"></span>
+          <div>
+            <p class="font-bold text-text-primary" x-text="cat.name"></p>
+            <p class="text-xs text-text-muted">
+              <span x-text="items.filter(i=>i.category===cat.id).length"></span> item(s)
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <!-- Toggle ativo/inativo -->
+          <button @click="toggleCategory(cat)"
+              class="text-xs px-2 py-1 rounded-lg transition-colors"
+              :class="cat.active?'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400':'bg-gray-100 text-gray-500 dark:bg-gray-800'"
+              x-text="cat.active?'Ativa':'Inativa'">
+          </button>
+          <!-- Editar -->
+          <button @click="startEditCategory(cat)"
+                  :disabled="_editingCatId === cat.id"
+                  class="text-text-muted hover:text-[var(--accent)] text-sm px-2 py-1 rounded-lg hover:bg-[var(--accent-light)] transition-colors disabled:opacity-40"
+                  title="Editar">
+            ✏️
+          </button>
+          <!-- Excluir -->
+          <button @click="deleteCategory(idx)"
+              class="text-red-400 hover:text-red-600 text-sm px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20">
+            🗑️
+          </button>
+        </div>
+
+      </div>
+    </template>
+  </div>
+</div>
 
                 <!-- ═══ PRODUCTS TAB ═══ -->
                 <div x-show="adminTab==='products'" class="space-y-4">
@@ -896,11 +934,24 @@
                 </div>
 
                 <!-- ═══ PROMOS TAB ═══ -->
-               <div x-show="adminTab==='promos'" class="space-y-4">
+              <div x-show="adminTab==='promos'" class="space-y-4">
   <h2 class="admin-section-title">🔥 Promoções</h2>
 
   <div class="admin-card space-y-3">
-    <h3 class="font-display font-bold text-text-primary text-sm mb-1">Nova Promoção</h3>
+
+    <!-- Banner de edição -->
+    <div x-show="_promoFormMode === 'edit'" x-cloak
+         class="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold -mb-1"
+         style="background:var(--accent-light); border-left:3px solid var(--accent)">
+      <span>✏️ Editando: <strong x-text="newPromo.name"></strong></span>
+      <button @click="cancelPromoEdit()"
+              class="ml-auto text-text-muted hover:text-text-primary transition-colors">
+        ✕ Cancelar
+      </button>
+    </div>
+
+    <h3 class="font-display font-bold text-text-primary text-sm mb-1"
+        x-text="_promoFormMode === 'edit' ? '✏️ Editar Promoção' : 'Nova Promoção'"></h3>
 
     <div class="grid grid-cols-2 gap-x-2 gap-y-3">
 
@@ -968,14 +1019,25 @@
 
     </div>
 
-    <button @click="addPromo()" class="btn-primary w-full">+ Criar Promoção</button>
+    <div class="flex gap-2">
+      <button @click="_promoFormMode === 'edit' ? updatePromo() : addPromo()"
+              class="btn-primary flex-1"
+              x-text="_promoFormMode === 'edit' ? '💾 Salvar Alterações' : '+ Criar Promoção'">
+      </button>
+      <button x-show="_promoFormMode === 'edit'" x-cloak
+              @click="cancelPromoEdit()"
+              class="px-4 py-2 rounded-xl text-sm font-semibold text-text-muted hover:text-text-primary transition-colors"
+              style="background:var(--surface-muted)">
+        Cancelar
+      </button>
+    </div>
   </div>
 
   <!-- Lista de promoções existentes -->
   <div class="space-y-2">
     <template x-for="(promo, idx) in promotions" :key="promo.id">
-      <div class="admin-card flex items-center justify-between gap-3"
-           :class="!promo.active ? 'opacity-60' : ''">
+      <div class="admin-card flex items-center justify-between gap-3 transition-all"
+           :class="[!promo.active ? 'opacity-60' : '', _editingPromoId === promo.id ? 'ring-2 ring-[var(--accent)]' : '']">
 
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
@@ -1011,6 +1073,12 @@
                   :style="promo.active ? 'background:var(--accent)' : 'background:#d1d5db'">
             <div class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-300"
                  :class="promo.active ? 'translate-x-5' : 'translate-x-0.5'"></div>
+          </button>
+          <button @click="startEditPromo(promo)"
+                  :disabled="_editingPromoId === promo.id"
+                  class="text-text-muted hover:text-[var(--accent)] px-2 py-1 rounded-lg hover:bg-[var(--accent-light)] text-sm transition-colors disabled:opacity-40"
+                  title="Editar promoção">
+            ✏️
           </button>
           <button @click="deletePromo(idx)"
                   class="text-red-400 hover:text-red-600 px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-sm">

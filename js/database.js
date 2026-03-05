@@ -35,30 +35,69 @@ const appDatabase = {
   },
 
   // ─────────────────────────────────────────────────────────────────────────
+  // HELPER PRIVADO — get com fallback automático para cache offline
+  //
+  // Tenta buscar do servidor. Se o cliente estiver offline (código
+  // 'unavailable' ou mensagem contendo 'offline'), tenta o cache local
+  // do Firestore em vez de lançar erro para o usuário.
+  // ─────────────────────────────────────────────────────────────────────────
+  async _getWithOfflineFallback(ref) {
+    try {
+      return await ref.get({ source: 'default' });
+    } catch (e) {
+      const isOffline =
+        e.code === 'unavailable' ||
+        (e.message || '').toLowerCase().includes('offline') ||
+        (e.message || '').toLowerCase().includes('client is offline');
+
+      if (isOffline) {
+        try {
+          return await ref.get({ source: 'cache' });
+        } catch {
+          // Cache também vazio — retorna snap "vazio" sintético para não travar o init
+          return { exists: false, data: () => null, docs: [] };
+        }
+      }
+      throw e;
+    }
+  },
+
+  // Versão para queries (collection.get())
+  async _queryWithOfflineFallback(query) {
+    try {
+      return await query.get({ source: 'default' });
+    } catch (e) {
+      const isOffline =
+        e.code === 'unavailable' ||
+        (e.message || '').toLowerCase().includes('offline') ||
+        (e.message || '').toLowerCase().includes('client is offline');
+
+      if (isOffline) {
+        try {
+          return await query.get({ source: 'cache' });
+        } catch {
+          return { docs: [], empty: true };
+        }
+      }
+      throw e;
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
   // CONFIG
-  //
-  // FIX: adminPass é separado da config pública.
-  //   • config/main  → dados públicos (nome, whatsapp, pix, taxas, isOpen…)
-  //   • adminConfig/auth → adminPass (coleção protegida, lida só por admin)
-  //
-  // Regras de segurança recomendadas para adminConfig:
-  //   allow read, write: if request.auth.token.role == "admin";
   // ─────────────────────────────────────────────────────────────────────────
 
   async saveConfig() {
     try {
-      // Separa adminPass da config pública antes de persistir
       const { adminPass, ...publicConfig } = this.config;
 
       const batch = firestoreDb.batch();
 
-      // Config pública — leitura liberada para todos
       batch.set(
         firestoreDb.collection('config').doc('main'),
         JSON.parse(JSON.stringify(publicConfig)),
       );
 
-      // adminPass — somente se preenchida, em coleção protegida
       if (adminPass && adminPass.length >= 4) {
         batch.set(
           firestoreDb.collection('adminConfig').doc('auth'),
@@ -241,9 +280,7 @@ const appDatabase = {
       return;
     }
 
-    // Anti-race: verifica se o usuário não mudou durante o await
     if (firebaseAuth.currentUser?.uid !== user.uid) return;
-
     if (!['admin', 'worker'].includes(role)) return;
 
     this._ordersUnsubscribe = firestoreDb
@@ -280,35 +317,41 @@ const appDatabase = {
   // ─────────────────────────────────────────────────────────────────────────
   // CARGA INICIAL — dados públicos
   //
-  // FIX: config carregada com Object.assign() em vez de reatribuição (this.config = {...}).
-  //   Reatribuição criava nova referência e podia quebrar rastreamento do Proxy
-  //   do Alpine em partes do app que guardavam referência ao objeto original.
-  //   Object.assign muta o mesmo objeto in-place — reatividade preservada.
-  //
-  // adminPass é carregado separadamente da coleção protegida adminConfig/auth.
+  // FIX (offline): usa _getWithOfflineFallback / _queryWithOfflineFallback
+  // para tentar o cache local quando o cliente estiver sem conexão.
+  // O app carrega normalmente a partir do cache; a sincronização acontece
+  // automaticamente quando a conexão for restabelecida.
   // ─────────────────────────────────────────────────────────────────────────
 
   async loadAllData() {
     try {
       const [cfgSnap, catsSnap, itemsSnap, promosSnap, counterSnap] =
         await Promise.all([
-          firestoreDb.collection('config').doc('main').get(),
-          firestoreDb.collection('categories').get(),
-          firestoreDb.collection('items').get(),
-          firestoreDb.collection('promotions').get(),
-          firestoreDb.collection('meta').doc('orderCounter').get(),
+          this._getWithOfflineFallback(
+            firestoreDb.collection('config').doc('main'),
+          ),
+          this._queryWithOfflineFallback(
+            firestoreDb.collection('categories'),
+          ),
+          this._queryWithOfflineFallback(
+            firestoreDb.collection('items'),
+          ),
+          this._queryWithOfflineFallback(
+            firestoreDb.collection('promotions'),
+          ),
+          this._getWithOfflineFallback(
+            firestoreDb.collection('meta').doc('orderCounter'),
+          ),
         ]);
 
-      // Config — Object.assign preserva a referência do Proxy Alpine
       if (cfgSnap.exists) {
         const { _row, id, adminPass: _ignored, ...savedCfg } = cfgSnap.data();
         Object.assign(this.config, savedCfg);
       }
 
-      // Listas — splice in-place para não quebrar referências do Proxy Alpine
-      const cats   = catsSnap.docs.map(d => d.data());
-      const its    = itemsSnap.docs.map(d => d.data());
-      const promos = promosSnap.docs.map(d => d.data());
+      const cats   = (catsSnap.docs   || []).map(d => d.data());
+      const its    = (itemsSnap.docs   || []).map(d => d.data());
+      const promos = (promosSnap.docs  || []).map(d => d.data());
 
       if (cats.length)   this.categories.splice(0, Infinity, ...cats);
       if (its.length)    this.items.splice(0, Infinity, ...its);
@@ -336,10 +379,34 @@ const appDatabase = {
 
   // ─────────────────────────────────────────────────────────────────────────
   // CARGA PÓS-AUTH — dados protegidos (pedidos, auditLog, adminPass)
+  //
+  // FIX (false for 'list' @ orders): o token JWT pode chegar ao onAuthStateChanged
+  // ainda sem os custom claims de role gravados pelo backend. A query ao Firestore
+  // é feita com o token stale, e as regras de segurança retornam false.
+  //
+  // Correção: força refresh do ID token antes de qualquer leitura protegida
+  // (getIdToken(true)), garantindo que os custom claims estejam presentes.
+  // Custo: 1 round-trip extra ao Google Auth por sessão — aceitável.
   // ─────────────────────────────────────────────────────────────────────────
 
   async loadProtectedData() {
-    // adminPass — somente admin pode ler adminConfig/auth
+    const user = firebaseAuth.currentUser;
+
+    // ── Força refresh do token para garantir custom claims atualizados ──────
+    // Sem isso, claims gravados pelo backend após o login podem não estar
+    // refletidos no token que o Firestore usa para avaliar as regras.
+    if (user) {
+      try {
+        await user.getIdToken(/* forceRefresh= */ true);
+      } catch (e) {
+        // Falha no refresh (ex: offline) — continua com o token atual.
+        // Leituras protegidas podem falhar por permissão; cada bloco
+        // abaixo trata seu próprio erro independentemente.
+        console.warn('[loadProtectedData] token refresh skipped:', e.message);
+      }
+    }
+
+    // ── adminPass ────────────────────────────────────────────────────────────
     if (this.isCloudAdmin) {
       try {
         const authDoc = await firestoreDb.collection('adminConfig').doc('auth').get();
@@ -348,12 +415,11 @@ const appDatabase = {
           if (adminPass) this.config.adminPass = adminPass;
         }
       } catch (e) {
-        // Permissão negada ou doc inexistente — não bloqueia o resto
         console.warn('[loadProtectedData] adminConfig read skipped:', e.message);
       }
     }
 
-    // Sys Logs: worker e admin podem listar errorLogs
+    // ── Sys Logs ─────────────────────────────────────────────────────────────
     if (this.isCloudAdmin || this.isCloudWorker) {
       try {
         await this.loadLogs();
@@ -364,7 +430,7 @@ const appDatabase = {
       }
     }
 
-    // Pedidos: qualquer worker ou admin
+    // ── Pedidos ───────────────────────────────────────────────────────────────
     if (this.isCloudAdmin || this.isCloudWorker) {
       try {
         if (!Array.isArray(this.orderHistory)) return;
@@ -382,13 +448,30 @@ const appDatabase = {
         await this._initRealtimeOrders();
 
       } catch (e) {
+        // Distingue erro de permissão (rules) de outros erros de leitura
+        const isPermission =
+          e.code === 'permission-denied' ||
+          (e.message || '').includes('false for');
+
         await this.logError(e.message || String(e), {
-          stack: e.stack || null, source: 'loadProtectedData:orders', type: 'dbReadError',
+          stack:        e.stack || null,
+          source:       'loadProtectedData:orders',
+          type:         isPermission ? 'permissionError' : 'dbReadError',
+          isCloudAdmin: this.isCloudAdmin,
+          isCloudWorker: this.isCloudWorker,
         }, 'database');
+
+        // Permissão negada mesmo após token refresh → avisa sem travar o app
+        if (isPermission) {
+          console.warn(
+            '[loadProtectedData:orders] Permissão negada. ' +
+            'Verifique as Firestore Security Rules para a coleção "orders".',
+          );
+        }
       }
     }
 
-    // AuditLog: somente admin
+    // ── AuditLog ──────────────────────────────────────────────────────────────
     if (this.isCloudAdmin) {
       try {
         const auditSnap = await firestoreDb

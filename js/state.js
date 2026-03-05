@@ -49,6 +49,7 @@ get userRoleLabel() {
 
   cart: [],
   checkout: { name: '', phone: '', address: '', complement: '', deliveryType: 'delivery', payment: 'pix' },
+  
   couponInput: '', appliedCoupon: null,
 
   isAdmin: false, adminTab: 'store',
@@ -569,4 +570,77 @@ _saveUserProfile() {
     localStorage.setItem(`userProfile:${uid}`, JSON.stringify(this.userProfile));
   } catch { /* quota excedida — ignora */ }
 },
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AUTO-PREENCHIMENTO DO CHECKOUT — adicionar ao objeto appData (ou equivalente)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// COMO USAR:
+//   1. Cole este método dentro do objeto Alpine principal (appData / app / etc.)
+//   2. No div externo do carrinho, adicione o x-effect:
+//        x-effect="if(showCart && isCloudAuthenticated) prefillCheckoutFromUser()"
+//   3. Substitua os inputs de nome e telefone pelos blocos HTML abaixo.
+//   4. Garanta que `checkout` tenha os flags: _namePrefilled, _phonePrefilled
+//      (inicialize como false no reset do checkout).
+//
+// FONTES lidas (em ordem de prioridade, as primeiras ganham):
+//   • this.cloudUser / this.currentUser / this.authUser   (objeto Alpine)
+//   • firebase.auth().currentUser                         (Firebase Auth SDK)
+//   • this.userProfile                                    (Firestore profile)
+//
+// Só preenche se o campo ainda estiver vazio — nunca sobrescreve digitação.
+// ═══════════════════════════════════════════════════════════════════════════
+
+prefillCheckoutFromUser() {
+  // Objeto do usuário autenticado (Alpine)
+  const u =
+    this.cloudUser    ||
+    this.currentUser  ||
+    this.authUser     ||
+    null;
+
+  // Firebase Auth currentUser
+  const fb =
+    (typeof firebase !== 'undefined' && typeof firebase.auth === 'function')
+      ? firebase.auth().currentUser
+      : null;
+
+  // Firestore profile (opcional)
+  const prof = this.userProfile || null;
+
+  // ── Nome ──────────────────────────────────────────────────────────────────
+  const nameEmpty = !this.checkout.name || !this.checkout.name.trim();
+  if (nameEmpty) {
+    const name =
+      u?.name         ||
+      u?.displayName  ||
+      fb?.displayName ||
+      prof?.name      ||
+      '';
+
+    if (name.trim()) {
+      this.checkout.name           = name.trim();
+      this.checkout._namePrefilled = true;
+    }
+  }
+
+  // ── Telefone ──────────────────────────────────────────────────────────────
+  const phoneEmpty = !this.checkout.phone || !this.checkout.phone.trim();
+  if (phoneEmpty) {
+    const phone =
+      u?.phone        ||
+      u?.phoneNumber  ||
+      u?.whatsapp     ||
+      fb?.phoneNumber ||
+      prof?.phone     ||
+      prof?.phoneNumber ||
+      '';
+
+    if (phone.trim()) {
+      this.checkout.phone           = phone.trim();
+      this.checkout._phonePrefilled = true;
+    }
+  }
+},
 };
+

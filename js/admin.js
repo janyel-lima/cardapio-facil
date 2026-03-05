@@ -10,31 +10,47 @@ const appAdmin = {
   clearHistoryPasswordError:  '',
 
   // ── Estado: upload de imagem ───────────────────────────────────────────────
+  //
+  // Declarados como valores escalares para garantir que o proxy do Alpine os
+  // rastreie desde o primeiro render — sem isso, mutações no finally/catch
+  // não disparam reatividade em alguns navegadores.
   _imageUploading:       false,
   _imageUploadProgress:  0,
+
+  // ── Estado: edição de promoção ─────────────────────────────────────────────
+  _promoFormMode:  'add',   // 'add' | 'edit'
+  _editingPromoId: null,
+
+  // ── Estado: edição de categoria ────────────────────────────────────────────
+  _catFormMode:   'add',    // 'add' | 'edit'
+  _editingCatId:  null,
 
 
   // ── Upload de imagem → Firebase Storage ───────────────────────────────────
   //
   // Fluxo:
-  //   1. Valida tipo (image/*) e tamanho máximo (5MB)
-  //   2. Upload com monitoramento de progresso via UploadTask
-  //   3. Obtém downloadURL público e seta em editingProduct.image
+  //   1. Valida tipo (image/*) e tamanho máximo (5 MB)
+  //   2. Envia via UploadTask com progresso reativo
+  //   3. Obtém downloadURL público e aplica em editingProduct.image
   //
-  // Path: items/{timestamp}_{filename}
-  // Arquivo antigo NÃO é deletado automaticamente — pode estar em uso
-  // por outros registros. Limpeza via Cloud Function se necessário.
+  // Path: items/{timestamp}_{slug_do_nome}
+  // Arquivos antigos NÃO são deletados automaticamente — podem estar em uso
+  // por outros registros. Limpeza fica a cargo de Cloud Function, se necessário.
   async uploadItemImage(event) {
-    const file = event.target.files?.[0];
+    const input = event.target;
+    const file  = input.files?.[0];
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
       this.showToast('Selecione um arquivo de imagem.', 'error', '⚠️');
+      input.value = '';
       return;
     }
+
     const MAX_MB = 5;
     if (file.size > MAX_MB * 1024 * 1024) {
-      this.showToast(`Imagem muito grande. Máximo: ${MAX_MB}MB.`, 'error', '⚠️');
+      this.showToast(`Imagem muito grande. Máximo: ${MAX_MB} MB.`, 'error', '⚠️');
+      input.value = '';
       return;
     }
 
@@ -42,7 +58,8 @@ const appAdmin = {
     this._imageUploadProgress = 0;
 
     try {
-      const path       = `items/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const slug       = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80);
+      const path       = `items/${Date.now()}_${slug}`;
       const storageRef = firebaseStorage.ref(path);
       const uploadTask = storageRef.put(file);
 
@@ -72,16 +89,58 @@ const appAdmin = {
     } finally {
       this._imageUploading      = false;
       this._imageUploadProgress = 0;
-      event.target.value = ''; // permite re-upload do mesmo arquivo
+      // Limpa o input APÓS resetar os flags — evita condição de corrida onde
+      // o Alpine já desmontou o nó antes do finally em alguns browsers.
+      try { input.value = ''; } catch (_) { /* input pode não existir mais */ }
     }
   },
+
+
+  // ── Salva configurações da loja no Firestore ───────────────────────────────
+  //
+  // Persiste this.config em /config/main com merge:true (preserva campos extras
+  // que possam ter sido adicionados fora deste cliente).
+  //
+  // adminPass é armazenado em texto plano intencionalmente — o sistema usa
+  // comparação direta para a confirmação de ações destrutivas (limpar histórico).
+  // Para ambientes de produção com múltiplos usuários, use Firebase Auth.
+  async saveConfig() {
+    try {
+      // Snapshot limpo: evita persistir propriedades internas do Alpine (__ob__, etc.)
+      const payload = {
+        restaurantName: this.config.restaurantName ?? '',
+        city:           this.config.city           ?? '',
+        whatsapp:       this.config.whatsapp        ?? '',
+        pixKey:         this.config.pixKey          ?? '',
+        deliveryFee:    Number(this.config.deliveryFee)  || 0,
+        minOrder:       Number(this.config.minOrder)     || 0,
+        deliveryTime:   this.config.deliveryTime    ?? '',
+        adminPass:      this.config.adminPass        ?? '',
+        isOpen:         !!this.config.isOpen,
+        updatedAt:      new Date().toISOString(),
+      };
+
+      await firestoreDb.collection('config').doc('main').set(payload, { merge: true });
+      await this.addAudit('STORE_SAVED', { restaurantName: payload.restaurantName });
+      this.showToast('Configurações salvas!', 'success', '💾');
+
+    } catch (e) {
+      await this.logError(e.message || String(e), {
+        stack: e.stack || null, source: 'saveConfig', type: 'dbWriteError',
+        restaurantName: this.config?.restaurantName || null,
+      }, 'admin');
+      this.showToast('Erro ao salvar configurações.', 'error', '❌');
+    }
+  },
+
+
   // ── Auditoria ──────────────────────────────────────────────────────────────
-   async addAudit(action, data = {}) {
+  async addAudit(action, data = {}) {
     const BUSINESS_EVENTS = new Set([
       'ORDER_PLACED', 'ORDER_STATUS_CHANGED', 'ORDER_EDITED',
       'PRODUCT_CREATED', 'PRODUCT_UPDATED', 'PRODUCT_DELETED',
-      'CATEGORY_CREATED', 'CATEGORY_DELETED', 'CATEGORY_TOGGLED',
-      'PROMO_CREATED', 'PROMO_DELETED', 'CONFIG_SAVED', 'STORE_SAVED', 'COUPON_APPLIED',
+      'CATEGORY_CREATED', 'CATEGORY_UPDATED', 'CATEGORY_DELETED', 'CATEGORY_TOGGLED',
+      'PROMO_CREATED', 'PROMO_UPDATED', 'PROMO_DELETED', 'CONFIG_SAVED', 'STORE_SAVED', 'COUPON_APPLIED',
       'EXPORT_EXCEL', 'EXPORT_CSV', 'EXPORT_JSON', 'EXPORT_PRINT',
       'DAY_CLOSED', 'HISTORY_CLEARED',
     ]);
@@ -185,6 +244,46 @@ const appAdmin = {
     } catch (e) {
       await this.logError(e.message || String(e), { stack: e.stack || null, source: 'deleteCategory', type: 'adminWriteError' }, 'admin');
       this.showToast('Erro ao excluir categoria.', 'error', '❌');
+    }
+  },
+
+  // ── Inicia edição inline de categoria ─────────────────────────────────────
+  startEditCategory(cat) {
+    this._editingCatId = cat.id;
+    this._catFormMode  = 'edit';
+    this.newCategory   = { name: cat.name, icon: cat.icon || '📦' };
+    setTimeout(() => {
+      document.getElementById('category-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  },
+
+  cancelCategoryEdit() {
+    this._editingCatId = null;
+    this._catFormMode  = 'add';
+    this.newCategory   = { name: '', icon: '' };
+  },
+
+  async updateCategory() {
+    if (!this.newCategory.name.trim()) { this.showToast('Informe o nome', 'error', '⚠️'); return; }
+    try {
+      const idx = this.categories.findIndex(c => c.id === this._editingCatId);
+      if (idx === -1) { this.cancelCategoryEdit(); return; }
+      const updated = {
+        ...this.categories[idx],
+        name: this.newCategory.name.trim(),
+        icon: this.newCategory.icon || this.categories[idx].icon || '📦',
+      };
+      this.categories.splice(idx, 1, updated);
+      await this.saveCategories();
+      await this.addAudit('CATEGORY_UPDATED', { name: updated.name, id: updated.id });
+      this.showToast('Categoria atualizada!', 'success', '✏️');
+      this.cancelCategoryEdit();
+    } catch (e) {
+      await this.logError(e.message || String(e), {
+        stack: e.stack || null, source: 'updateCategory', type: 'adminWriteError',
+        catId: this._editingCatId,
+      }, 'admin');
+      this.showToast('Erro ao atualizar categoria.', 'error', '❌');
     }
   },
 
@@ -398,6 +497,89 @@ const appAdmin = {
         promoName: this.newPromo?.name || null, promoType: this.newPromo?.type || null,
       }, 'admin');
       this.showToast('Erro ao criar promoção.', 'error', '❌');
+    }
+  },
+
+  // ── Inicia edição de promoção ──────────────────────────────────────────────
+  startEditPromo(promo) {
+    this._editingPromoId = promo.id;
+    this._promoFormMode  = 'edit';
+    this.newPromo = {
+      name:      promo.name,
+      type:      promo.type,
+      scope:     promo.scope || 'cart',
+      value:     promo.value || 0,
+      code:      promo.code  || '',
+      minOrder:  promo.minOrder || 0,
+      expiresAt: promo.expiresAt || '',
+    };
+    setTimeout(() => {
+      document.getElementById('promo-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  },
+
+  cancelPromoEdit() {
+    this._editingPromoId = null;
+    this._promoFormMode  = 'add';
+    this.newPromo = { name: '', type: 'percentage', scope: 'cart', value: 0, code: '', minOrder: 0, expiresAt: '' };
+  },
+
+  async updatePromo() {
+    if (!this.newPromo.name.trim()) { this.showToast('Informe o nome', 'error', '⚠️'); return; }
+    if (this.newPromo.type === 'coupon' && !this.newPromo.code.trim()) {
+      this.showToast('Informe o código', 'error', '⚠️'); return;
+    }
+    try {
+      const idx = this.promotions.findIndex(p => p.id === this._editingPromoId);
+      if (idx === -1) { this.cancelPromoEdit(); return; }
+
+      const existing = this.promotions[idx];
+      const scope =
+        (this.newPromo.type === 'coupon' || this.newPromo.type === 'freeDelivery')
+          ? 'cart'
+          : (this.newPromo.scope || 'cart');
+
+      const updated = {
+        ...existing,
+        name:      this.newPromo.name.trim(),
+        type:      this.newPromo.type,
+        scope,
+        value:     this.newPromo.value    || 0,
+        code:      (this.newPromo.code || '').trim().toUpperCase(),
+        minOrder:  this.newPromo.minOrder || 0,
+        expiresAt: this.newPromo.expiresAt || '',
+      };
+
+      this.promotions.splice(idx, 1, updated);
+
+      // Recalcula promoPrice dos itens vinculados
+      const linked = this.items.filter(i => i.promoId === updated.id);
+      if (linked.length > 0) {
+        this.items.forEach((item, i) => {
+          if (item.promoId !== updated.id) return;
+          let pp = null;
+          if (updated.active) {
+            if (updated.type === 'percentage')
+              pp = +(item.price * (1 - updated.value / 100)).toFixed(2);
+            else if (updated.type === 'fixed')
+              pp = +Math.max(0, item.price - updated.value).toFixed(2);
+          }
+          this.items.splice(i, 1, { ...item, promoPrice: pp });
+        });
+        await this.saveItems();
+      }
+
+      await this.savePromotions();
+      await this.addAudit('PROMO_UPDATED', { name: updated.name, type: updated.type, id: updated.id });
+      this.showToast('Promoção atualizada!', 'success', '✏️');
+      this.cancelPromoEdit();
+
+    } catch (e) {
+      await this.logError(e.message || String(e), {
+        stack: e.stack || null, source: 'updatePromo', type: 'adminWriteError',
+        promoId: this._editingPromoId,
+      }, 'admin');
+      this.showToast('Erro ao atualizar promoção.', 'error', '❌');
     }
   },
 
@@ -660,8 +842,7 @@ const appAdmin = {
       const wb      = XLSX.utils.book_new();
       const n       = v => (typeof v === 'number' ? v : 0);
 
-      const promoTypeLabel = { percentage: '% desconto', fixed: 'R$ desconto', freeDelivery: 'Frete grátis', coupon: 'Cupom' };
-      const payLabel       = { pix: 'PIX', card: 'Cartão', cash: 'Dinheiro' };
+      const payLabel = { pix: 'PIX', card: 'Cartão', cash: 'Dinheiro' };
 
       const dayGross    = today.rawOrders.reduce((s, o) => s + n(o.originalSubtotal || o.subtotal), 0);
       const dayItemDisc = today.rawOrders.reduce((s, o) => s + n(o.itemDiscounts), 0);
