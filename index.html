@@ -25,6 +25,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
 
     <link rel="stylesheet" href="style.css">
 </head>
@@ -2971,14 +2972,49 @@
                             </select>
                         </div>
 
+                        <!-- ── Imagem do produto ──────────────────────────── -->
                         <div>
-                            <label class="form-label">URL da imagem</label>
-                            <input type="url" x-model="editingProduct.image" placeholder="https://…"
-                                class="form-input w-full">
-                        </div>
-                        <div x-show="editingProduct.image" class="rounded-xl overflow-hidden h-28">
-                            <img :src="editingProduct.image" class="w-full h-full object-cover"
-                                @error="editingProduct.image=''">
+                          <label class="form-label">Imagem</label>
+
+                          <!-- Preview -->
+                          <div x-show="editingProduct.image"
+                               class="relative rounded-xl overflow-hidden h-32 mb-2 group">
+                            <img :src="editingProduct.image"
+                                 class="w-full h-full object-cover"
+                                 @error="editingProduct.image=''">
+                            <button type="button"
+                                    @click="editingProduct.image = ''"
+                                    class="absolute top-2 right-2 w-7 h-7 rounded-lg bg-black/60 text-white
+                                           flex items-center justify-center opacity-0 group-hover:opacity-100
+                                           transition-opacity text-xs">✕</button>
+                          </div>
+
+                          <!-- Upload via arquivo -->
+                          <label class="flex items-center gap-2 cursor-pointer w-full mb-2">
+                            <div class="flex-1 flex items-center gap-2 px-3 py-2.5 rounded-xl border border-dashed
+                                        border-border hover:border-accent/50 transition-colors text-sm text-text-muted
+                                        hover:text-accent"
+                                 style="background:var(--surface-muted)">
+                              <span x-show="!_imageUploading">📁</span>
+                              <span x-show="_imageUploading" class="animate-spin text-accent">⏳</span>
+                              <span x-show="!_imageUploading" x-text="editingProduct.image ? 'Trocar arquivo...' : 'Enviar do dispositivo...'"></span>
+                              <span x-show="_imageUploading" class="text-accent font-medium"
+                                    x-text="'Enviando... ' + _imageUploadProgress + '%'"></span>
+                            </div>
+                            <input type="file" accept="image/*" class="hidden"
+                                   :disabled="_imageUploading"
+                                   @change="uploadItemImage($event)">
+                          </label>
+
+                          <!-- Ou URL manual -->
+                          <div class="flex items-center gap-2 text-[10px] text-text-muted mb-1.5">
+                            <div class="flex-1 h-px" style="background:var(--border)"></div>
+                            <span>ou cole uma URL</span>
+                            <div class="flex-1 h-px" style="background:var(--border)"></div>
+                          </div>
+                          <input type="url" x-model="editingProduct.image"
+                                 placeholder="https://exemplo.com/foto.jpg"
+                                 class="form-input w-full text-sm">
                         </div>
 
                         <div class="grid grid-cols-2 gap-3">

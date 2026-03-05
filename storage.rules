@@ -1,0 +1,41 @@
+rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════════════════
+//   CARDÁPIO DIGITAL PRO — storage.rules
+//
+//   Roles via Custom Claims (request.auth.token.role)
+//   Espelha a mesma estratégia do firestore.rules — sem get() extra.
+// ═══════════════════════════════════════════════════════════════════════════
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    function isAuthed()  { return request.auth != null; }
+    function role()      { return isAuthed() ? request.auth.token.get('role', '') : ''; }
+    function isAdmin()   { return role() == 'admin'; }
+    function isWorker()  { return role() in ['admin', 'worker']; }
+
+    // ── Imagens de produtos ───────────────────────────────────────────────────
+    // items/{filename} — criadas pelo admin via uploadItemImage()
+    match /items/{filename} {
+      // Leitura pública — qualquer um pode ver as fotos do cardápio
+      allow read: if true;
+
+      // Upload: só admin/worker. Valida tipo e tamanho (5MB).
+      allow create: if isWorker()
+                    && request.resource.size  <= 5 * 1024 * 1024
+                    && request.resource.contentType.matches('image/.*');
+
+      // Substituição: mesma regra do create
+      allow update: if isWorker()
+                    && request.resource.size  <= 5 * 1024 * 1024
+                    && request.resource.contentType.matches('image/.*');
+
+      // Deleção: somente admin
+      allow delete: if isAdmin();
+    }
+
+    // Qualquer outro path: negado por padrão
+  }
+}

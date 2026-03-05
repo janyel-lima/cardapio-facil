@@ -1,3 +1,7 @@
+/* ═══════════════════════════════════════════════════════
+   CARDÁPIO DIGITAL PRO — js/admin.js
+═══════════════════════════════════════════════════════ */
+
 const appAdmin = {
 
   // ── Estado: confirmação de limpeza de histórico ────────────────────────────
@@ -5,24 +9,79 @@ const appAdmin = {
   clearHistoryPassword:       '',
   clearHistoryPasswordError:  '',
 
-  // ── Segurança ──────────────────────────────────────────────────────────────
-  
+  // ── Estado: upload de imagem ───────────────────────────────────────────────
+  _imageUploading:       false,
+  _imageUploadProgress:  0,
 
-  
 
-  
+  // ── Upload de imagem → Firebase Storage ───────────────────────────────────
+  //
+  // Fluxo:
+  //   1. Valida tipo (image/*) e tamanho máximo (5MB)
+  //   2. Upload com monitoramento de progresso via UploadTask
+  //   3. Obtém downloadURL público e seta em editingProduct.image
+  //
+  // Path: items/{timestamp}_{filename}
+  // Arquivo antigo NÃO é deletado automaticamente — pode estar em uso
+  // por outros registros. Limpeza via Cloud Function se necessário.
+  async uploadItemImage(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-  
+    if (!file.type.startsWith('image/')) {
+      this.showToast('Selecione um arquivo de imagem.', 'error', '⚠️');
+      return;
+    }
+    const MAX_MB = 5;
+    if (file.size > MAX_MB * 1024 * 1024) {
+      this.showToast(`Imagem muito grande. Máximo: ${MAX_MB}MB.`, 'error', '⚠️');
+      return;
+    }
 
-  
+    this._imageUploading      = true;
+    this._imageUploadProgress = 0;
 
+    try {
+      const path       = `items/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const storageRef = firebaseStorage.ref(path);
+      const uploadTask = storageRef.put(file);
+
+      await new Promise((resolve, reject) => {
+        uploadTask.on(
+          'state_changed',
+          snap => {
+            this._imageUploadProgress = Math.round(
+              (snap.bytesTransferred / snap.totalBytes) * 100,
+            );
+          },
+          reject,
+          resolve,
+        );
+      });
+
+      const url = await storageRef.getDownloadURL();
+      this.editingProduct.image = url;
+      this.showToast('Imagem enviada!', 'success', '🖼️');
+
+    } catch (e) {
+      await this.logError(e.message || String(e), {
+        source: 'uploadItemImage', type: 'storageError', stack: e.stack || null,
+        fileName: file?.name || null, fileSize: file?.size || null,
+      }, 'admin');
+      this.showToast('Erro ao enviar imagem.', 'error', '❌');
+    } finally {
+      this._imageUploading      = false;
+      this._imageUploadProgress = 0;
+      event.target.value = ''; // permite re-upload do mesmo arquivo
+    }
+  },
   // ── Auditoria ──────────────────────────────────────────────────────────────
    async addAudit(action, data = {}) {
     const BUSINESS_EVENTS = new Set([
       'ORDER_PLACED', 'ORDER_STATUS_CHANGED', 'ORDER_EDITED',
       'PRODUCT_CREATED', 'PRODUCT_UPDATED', 'PRODUCT_DELETED',
       'CATEGORY_CREATED', 'CATEGORY_DELETED', 'CATEGORY_TOGGLED',
-      'PROMO_CREATED', 'PROMO_DELETED', 'CONFIG_SAVED', 'COUPON_APPLIED',
+      'PROMO_CREATED', 'PROMO_DELETED', 'CONFIG_SAVED', 'STORE_SAVED', 'COUPON_APPLIED',
       'EXPORT_EXCEL', 'EXPORT_CSV', 'EXPORT_JSON', 'EXPORT_PRINT',
       'DAY_CLOSED', 'HISTORY_CLEARED',
     ]);
@@ -42,7 +101,6 @@ const appAdmin = {
       );
       this.auditLog.push(entry);
 
-      // ✅ FIRESTORE (era: await db.auditLog.put(entry))
       await firestoreDb.collection('auditLog').doc(entry.id).set(entry);
 
     } catch (e) {
@@ -135,10 +193,6 @@ const appAdmin = {
       const willBeActive = !cat.active;
       const catIdx       = this.categories.findIndex(c => c.id === cat.id);
       if (catIdx === -1) return;
-
-      // FIX: splice em vez de reatribuição — preserva a referência do Proxy Alpine.
-      // this.categories = [...this.categories]  →  substitui a ref, quebra reatividade.
-      // splice(catIdx, 1, novoItem)  →  muta in-place, ref permanece a mesma.
       this.categories.splice(catIdx, 1, { ...this.categories[catIdx], active: willBeActive });
 
       let affectedCount = 0;
@@ -156,10 +210,7 @@ const appAdmin = {
       await this.saveCategories();
       if (affectedCount > 0) await this.saveItems();
       await this.addAudit('CATEGORY_TOGGLED', {
-        id:               cat.id,
-        name:             cat.name,
-        active:           willBeActive,
-        affectedProducts: affectedCount,
+        id: cat.id, name: cat.name, active: willBeActive, affectedProducts: affectedCount,
       });
 
       const label = willBeActive ? 'ativada' : 'desativada';
@@ -187,15 +238,17 @@ const appAdmin = {
     } else {
       this.editingProduct = {
         name: '', desc: '', price: 0, promoPrice: null, promoId: null,
-        category:   this.categories[0]?.id || '',
-        image:      '',
-        available:  true,
-        featured:   false,
+        category:    this.categories[0]?.id || '',
+        image:       '',
+        available:   true,
+        featured:    false,
         complements: [],
       };
     }
-    this.newGroup       = { name: '', type: 'multiple', required: false, min: 0, max: 3, options: [] };
-    this.newGroupOption = { name: '', price: 0 };
+    this.newGroup        = { name: '', type: 'multiple', required: false, min: 0, max: 3, options: [] };
+    this.newGroupOption  = { name: '', price: 0 };
+    this._imageUploading = false;
+    this._imageUploadProgress = 0;
     this.showProductForm = true;
   },
 
@@ -266,20 +319,18 @@ const appAdmin = {
         this.editingProduct.id = Date.now();
         this.items.push({ ...this.editingProduct });
         await this.addAudit('PRODUCT_CREATED', {
-          name:       this.editingProduct.name,
-          price:      this.editingProduct.price,
-          promoId:    this.editingProduct.promoId,
-          promoPrice: this.editingProduct.promoPrice,
+          name: this.editingProduct.name, price: this.editingProduct.price,
+          promoId: this.editingProduct.promoId, promoPrice: this.editingProduct.promoPrice,
+          hasImage: !!this.editingProduct.image,
         });
         this.showToast('Produto adicionado!', 'success', '➕');
       } else {
         const idx = this.items.findIndex(i => i.id === this.editingProduct.id);
         if (idx !== -1) this.items.splice(idx, 1, { ...this.editingProduct });
         await this.addAudit('PRODUCT_UPDATED', {
-          name:       this.editingProduct.name,
-          id:         this.editingProduct.id,
-          promoId:    this.editingProduct.promoId,
-          promoPrice: this.editingProduct.promoPrice,
+          name: this.editingProduct.name, id: this.editingProduct.id,
+          promoId: this.editingProduct.promoId, promoPrice: this.editingProduct.promoPrice,
+          hasImage: !!this.editingProduct.image,
         });
         this.showToast('Produto atualizado!', 'success', '✏️');
       }
@@ -338,11 +389,7 @@ const appAdmin = {
       this.newPromo = { name: '', type: 'percentage', scope: 'cart', value: 0, code: '', minOrder: 0, expiresAt: '' };
       await this.savePromotions();
       await this.addAudit('PROMO_CREATED', {
-        name:  promo.name,
-        type:  promo.type,
-        scope: promo.scope,
-        value: promo.value,
-        code:  promo.code,
+        name: promo.name, type: promo.type, scope: promo.scope, value: promo.value, code: promo.code,
       });
       this.showToast('Promoção criada!', 'success', '🔥');
     } catch (e) {
@@ -360,8 +407,6 @@ const appAdmin = {
       const affectedItems = this.items.filter(i => i.promoId === promo.id);
 
       if (affectedItems.length > 0) {
-        // FIX: this.items.map() retornava um array novo — substituição de ref.
-        // forEach + splice muta in-place, preservando a referência.
         this.items.forEach((item, i) => {
           if (item.promoId === promo.id) {
             this.items.splice(i, 1, { ...item, promoId: null, promoPrice: null });
@@ -373,9 +418,7 @@ const appAdmin = {
       this.promotions.splice(index, 1);
       await this.savePromotions();
       await this.addAudit('PROMO_DELETED', {
-        name:          promo.name,
-        id:            promo.id,
-        affectedItems: affectedItems.length,
+        name: promo.name, id: promo.id, affectedItems: affectedItems.length,
       });
 
       if (affectedItems.length > 0) {
@@ -399,17 +442,10 @@ const appAdmin = {
       const idx = this.promotions.findIndex(p => p.id === promo.id);
       if (idx === -1) return;
       const willBeActive = !promo.active;
-
-      // FIX: splice em vez de reatribuição.
-      // this.promotions[idx] = {...}; this.promotions = [...this.promotions]
-      // → substituía a ref inteira, invalidando o tracking Alpine.
-      // splice(idx, 1, novoItem) → muta in-place, ref permanece a mesma.
       this.promotions.splice(idx, 1, { ...this.promotions[idx], active: willBeActive });
 
       const linked = this.items.filter(i => i.promoId === promo.id);
       if (linked.length > 0) {
-        // FIX: idem — this.items.map() retorna array novo.
-        // forEach + splice muta in-place.
         this.items.forEach((item, i) => {
           if (item.promoId !== promo.id) return;
           if (!willBeActive) {
@@ -508,7 +544,6 @@ const appAdmin = {
       this.clearHistoryPassword      = '';
       this.clearHistoryPasswordError = '';
 
-      // ✅ FIRESTORE: deleta todos os pedidos em batch (era: db.orders.clear())
       const snap  = await firestoreDb.collection('orders').get();
       const CHUNK = 450;
       for (let i = 0; i < snap.docs.length; i += CHUNK) {
@@ -641,152 +676,52 @@ const appAdmin = {
         ['', ''],
         ['── DRE DO DIA ──', ''],
         ['Receita Bruta (subtotais sem descontos)', dayGross],
-        ['(−) Descontos de Item (promoções vinculadas por produto)', -dayItemDisc],
-        ['(−) Descontos de Carrinho (promos automáticas + cupons)', -dayCartDisc],
+        ['(−) Descontos de Item', -dayItemDisc],
+        ['(−) Descontos de Carrinho', -dayCartDisc],
         ['(+) Taxas de Entrega cobradas', dayDelivery],
         ['(=) Receita Líquida', today.revenue],
         ['', ''],
         ['── OPERACIONAL ──', ''],
         ['Pedidos no Dia', today.orders],
-        ['Pedidos c/ Desconto de Item', today.rawOrders.filter(o => n(o.itemDiscounts) > 0).length],
-        ['Pedidos c/ Desconto de Carrinho', today.rawOrders.filter(o => n(o.discount) > 0).length],
         ['Ticket Médio (líquido)', today.avgTicket],
         ['', ''],
         ['── POR FORMA DE PAGAMENTO ──', ''],
         ['PIX',      today.byPayment.pix],
         ['Cartão',   today.byPayment.card],
         ['Dinheiro', today.byPayment.cash],
-        ['', ''],
-        ['── HISTÓRICO GERAL ──', ''],
-        ['Total de Pedidos (histórico)', allOrds.length],
-        ['Receita Líquida Total', allOrds.reduce((s, o) => s + n(o.total), 0)],
-        ['Total Desconto de Item', allOrds.reduce((s, o) => s + n(o.itemDiscounts), 0)],
-        ['Total Desconto de Carrinho', allOrds.reduce((s, o) => s + n(o.discount), 0)],
-        ['Total Descontos Combinados', allOrds.reduce((s, o) => s + n(o.itemDiscounts) + n(o.discount), 0)],
       ]);
       XLSX.utils.book_append_sheet(wb, ws1, 'Resumo Contábil');
 
       const ws2 = XLSX.utils.aoa_to_sheet([
         ['UUID', 'Nº Pedido', 'Data', 'Hora', 'Cliente', 'Tel', 'Pagamento', 'Tipo',
-          'Bruto (orig.)', 'Desc. Item', 'Desc. Carrinho', 'Entrega', 'Total Líquido',
-          'Cupom', 'Promos Carrinho', 'Hash', 'Integridade'],
+          'Bruto', 'Desc. Item', 'Desc. Carrinho', 'Entrega', 'Total', 'Cupom', 'Hash', 'Integridade'],
         ...today.rawOrders.map(o => {
-          const promoNames = (o.appliedPromos || []).map(p => p.name).join('; ');
-          const integrity  = this.verifyOrderHash(o) ? 'íntegro' : 'ADULTERADO';
+          const integrity = this.verifyOrderHash(o) ? 'íntegro' : 'ADULTERADO';
           return [
-            o.uuid || '-', o.orderNumber || '-', o.date || '-', o.time || '-',
-            o.name || '-', o.phone || '-',
-            payLabel[o.payment] || o.payment || '-', o.deliveryType || '-',
-            n(o.originalSubtotal || o.subtotal), n(o.itemDiscounts), n(o.discount),
-            n(o.deliveryFee), n(o.total), o.coupon || '—', promoNames || '—',
-            o.hash || '-', integrity,
+            o.uuid||'-', o.orderNumber||'-', o.date||'-', o.time||'-',
+            o.name||'-', o.phone||'-',
+            payLabel[o.payment]||o.payment||'-', o.deliveryType||'-',
+            n(o.originalSubtotal||o.subtotal), n(o.itemDiscounts), n(o.discount),
+            n(o.deliveryFee), n(o.total), o.coupon||'—', o.hash||'-', integrity,
           ];
         }),
       ]);
       XLSX.utils.book_append_sheet(wb, ws2, 'Pedidos do Dia');
 
-      const itemRows3 = [];
-      today.rawOrders.forEach(o => {
-        (o.items || []).forEach(item => {
-          itemRows3.push([
-            o.orderNumber || '-', o.uuid || '-', o.date || '-', o.name || '-',
-            item.name || '-', item.qty || 0,
-            n(item.originalPrice || item.unitPrice), n(item.unitPrice),
-            n(item.itemDiscountAmount),
-            item.itemPromoType ? (item.itemPromoType === 'percentage' ? item.itemPromoValue + '%' : 'R$ ' + item.itemPromoValue) : '—',
-            item.itemPromoId || '—', item.itemPromoName || '—',
-            promoTypeLabel[item.itemPromoType] || '—',
-            n(item.complementsTotal), n(item.total), item.note || '', o.orderNumber || '-',
-          ]);
-        });
-      });
-      const ws3 = XLSX.utils.aoa_to_sheet([
-        ['Nº Pedido', 'UUID Pedido', 'Data', 'Cliente', 'Item', 'Qtd',
-          'Preço Original (tabela)', 'Preço c/ Promo Item', 'Desc. Item (total)',
-          'Percentual/Fixo Desc.', 'ID Promoção Item', 'Nome Promoção Item', 'Tipo Promoção Item',
-          'Complementos', 'Total Item', 'Obs.', 'Ref. Pedido → Aba Pedidos'],
-        ...itemRows3,
-      ]);
-      XLSX.utils.book_append_sheet(wb, ws3, 'Itens Detalhados');
-
-      const ws4 = XLSX.utils.aoa_to_sheet([
-        ['#', 'Produto', 'Qtd Vendida', 'Faturamento (líquido)', '% Receita'],
-        ...today.topProducts.map((p, i) => [
-          i + 1, p.name, p.qty, p.total,
-          today.revenue > 0 ? (p.total / today.revenue * 100).toFixed(1) + '%' : '0%',
-        ]),
-      ]);
-      XLSX.utils.book_append_sheet(wb, ws4, 'Ranking Produtos');
-
       const ws5 = XLSX.utils.aoa_to_sheet([
-        ['UUID', 'Nº Pedido', 'Data', 'Hora', 'Cliente', 'Pagamento',
-          'Bruto (orig.)', 'Desc. Item', 'Desc. Carrinho', 'Entrega', 'Total', 'Cupom'],
+        ['UUID', 'Nº Pedido', 'Data', 'Hora', 'Cliente', 'Pagamento', 'Total'],
         ...allOrds.map(o => [
-          o.uuid || '-', o.orderNumber || '-', this._normalizeOrderDate(o), o.time || '-',
-          o.name || '-', payLabel[o.payment] || o.payment || '-',
-          n(o.originalSubtotal || o.subtotal), n(o.itemDiscounts), n(o.discount),
-          n(o.deliveryFee), n(o.total), o.coupon || '—',
+          o.uuid||'-', o.orderNumber||'-', this._normalizeOrderDate(o), o.time||'-',
+          o.name||'-', payLabel[o.payment]||o.payment||'-', n(o.total),
         ]),
       ]);
       XLSX.utils.book_append_sheet(wb, ws5, 'Histórico Geral');
 
-      const promoUsage = {};
-      allOrds.forEach(o => {
-        (o.items || []).forEach(item => {
-          if (!item.itemPromoId) return;
-          const key = String(item.itemPromoId);
-          if (!promoUsage[key]) promoUsage[key] = { name: item.itemPromoName || key, scope: 'item', uses: 0, ordersSet: new Set(), totalDiscount: 0 };
-          promoUsage[key].uses++;
-          promoUsage[key].ordersSet.add(o.orderNumber);
-          promoUsage[key].totalDiscount += n(item.itemDiscountAmount);
-        });
-        (o.appliedPromos || []).forEach(p => {
-          const key = String(p.id);
-          if (!promoUsage[key]) promoUsage[key] = { name: p.name || key, scope: 'cart', uses: 0, ordersSet: new Set(), totalDiscount: 0 };
-          promoUsage[key].uses++;
-          promoUsage[key].ordersSet.add(o.orderNumber);
-          promoUsage[key].totalDiscount += n(p.discountAmount);
-        });
-        if (o.coupon) {
-          const key = 'CUP_' + o.coupon;
-          if (!promoUsage[key]) promoUsage[key] = { name: 'Cupom: ' + o.coupon, scope: 'coupon', uses: 0, ordersSet: new Set(), totalDiscount: 0 };
-          promoUsage[key].uses++;
-          promoUsage[key].ordersSet.add(o.orderNumber);
-          promoUsage[key].totalDiscount += n(o.couponDetail?.discountAmount || o.discount);
-        }
-      });
-
-      const promoRows = (this.promotions || []).map(p => {
-        const usageKey  = String(p.id);
-        const couponKey = p.type === 'coupon' ? 'CUP_' + p.code : null;
-        const u         = promoUsage[usageKey] || (couponKey ? promoUsage[couponKey] : null) || { uses: 0, ordersSet: new Set(), totalDiscount: 0 };
-        const valueStr  = p.type === 'percentage' ? p.value + '%' : p.type === 'fixed' ? 'R$ ' + p.value : p.type === 'freeDelivery' ? 'Frete grátis' : p.type === 'coupon' ? p.code + ' (' + p.value + (p.type === 'percentage' ? '%)' : ' R$)') : '-';
-        const linkedProducts = (this.items || []).filter(i => i.promoId === p.id).map(i => i.name).join('; ') || '—';
-        return [p.id, p.name, promoTypeLabel[p.type] || p.type, p.scope || 'cart', valueStr, p.minOrder || 0, p.expiresAt || '—', p.active ? 'Ativa' : 'Inativa', linkedProducts, u.uses, u.ordersSet.size, u.totalDiscount];
-      });
-      const ws6 = XLSX.utils.aoa_to_sheet([
-        ['ID', 'Nome', 'Tipo', 'Escopo', 'Benefício', 'Pedido Mínimo', 'Expira em', 'Status', 'Produtos Vinculados', 'Usos (itens/pedidos)', 'Pedidos Únicos', 'Desconto Total Gerado'],
-        ...promoRows,
-      ]);
-      XLSX.utils.book_append_sheet(wb, ws6, 'Promoções');
-
-      const catalogRows = (this.items || []).map(item => {
-        const cat         = this.categories.find(c => c.id === item.category);
-        const linkedPromo = item.promoId ? (this.promotions || []).find(p => p.id === item.promoId) : null;
-        const discountPct = linkedPromo && item.promoPrice ? (((item.price - item.promoPrice) / item.price) * 100).toFixed(1) + '%' : '—';
-        return [item.id, item.name, cat ? `${cat.icon} ${cat.name}` : item.category, item.price, item.promoPrice || '—', discountPct, item.promoId || '—', linkedPromo?.name || '—', linkedPromo?.type ? promoTypeLabel[linkedPromo.type] : '—', item.available ? 'Disponível' : 'Indisponível', item.featured ? 'Sim' : 'Não'];
-      });
-      const ws7 = XLSX.utils.aoa_to_sheet([
-        ['ID Produto', 'Nome', 'Categoria', 'Preço Tabela', 'Preço c/ Promo', '% Desconto', 'ID Promoção Vinculada', 'Nome Promoção', 'Tipo Promoção', 'Disponibilidade', 'Destaque'],
-        ...catalogRows,
-      ]);
-      XLSX.utils.book_append_sheet(wb, ws7, 'Catálogo Produtos');
-
       XLSX.writeFile(wb, `fechamento_${today.date.replace(/\//g, '-')}.xlsx`);
-      await this.addAudit('EXPORT_EXCEL', { date: today.date, orders: today.orders, revenue: today.revenue, itemDiscounts: dayItemDisc, cartDiscounts: dayCartDisc, sheets: 7 });
-      this.showToast('Excel exportado! (7 planilhas)', 'success', '📊');
+      await this.addAudit('EXPORT_EXCEL', { date: today.date, orders: today.orders, revenue: today.revenue });
+      this.showToast('Excel exportado!', 'success', '📊');
     } catch (e) {
-      await this.logError(e.message || String(e), { stack: e.stack || null, source: 'exportExcel', type: 'exportError', orders: this.todayStats?.orders || 0 }, 'admin');
+      await this.logError(e.message || String(e), { stack: e.stack || null, source: 'exportExcel', type: 'exportError' }, 'admin');
       this.showToast('Erro ao exportar Excel.', 'error', '❌');
     }
   },
@@ -794,19 +729,13 @@ const appAdmin = {
   async exportCSV() {
     try {
       const today = this.todayStats;
-      const n     = v => (typeof v === 'number' ? v : 0);
       const q     = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-      const header = ['uuid','orderNumber','date','time','customer','phone','payment','deliveryType','originalSubtotal','itemDiscountsTotal','cartDiscount','totalDiscounts','deliveryFee','netTotal','couponCode','couponDiscount','cartPromoNames','hasItemPromo','itemPromoNames','itemCount','integrity'].map(q);
-      const rows = today.rawOrders.map(o => {
-        const cartPromoNames = (o.appliedPromos || []).map(p => p.name).join('; ');
-        const couponDiscount = o.couponDetail?.discountAmount ?? 0;
-        const itemPromoSet   = new Set((o.items || []).filter(i => i.itemPromoName).map(i => i.itemPromoName));
-        const itemPromoNames = [...itemPromoSet].join('; ');
-        const hasItemPromo   = itemPromoSet.size > 0;
-        const totalDiscounts = n(o.itemDiscounts) + n(o.discount);
-        const integrity      = this.verifyOrderHash(o) ? 'ok' : 'ADULTERADO';
-        return [q(o.uuid||''),q(o.orderNumber||''),q(o.date||''),q(o.time||''),q(o.name||''),q(o.phone||''),q({pix:'PIX',card:'Cartão',cash:'Dinheiro'}[o.payment]||o.payment||''),q(o.deliveryType||''),n(o.originalSubtotal||o.subtotal),n(o.itemDiscounts),n(o.discount),totalDiscounts,n(o.deliveryFee),n(o.total),q(o.coupon||''),couponDiscount,q(cartPromoNames),q(hasItemPromo?'sim':'não'),q(itemPromoNames),(o.items||[]).length,q(integrity)].join(',');
-      });
+      const n     = v => (typeof v === 'number' ? v : 0);
+      const header = ['uuid','orderNumber','date','time','customer','payment','total'].map(q);
+      const rows = today.rawOrders.map(o =>
+        [q(o.uuid||''),q(o.orderNumber||''),q(o.date||''),q(o.time||''),q(o.name||''),
+         q(o.payment||''),n(o.total)].join(',')
+      );
       const csv = [header.join(','), ...rows].join('\n');
       const a   = document.createElement('a');
       a.href    = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }));
@@ -824,43 +753,12 @@ const appAdmin = {
     try {
       const today   = this.todayStats;
       const allOrds = this.orderHistory || [];
-      const n       = v => (typeof v === 'number' ? v : 0);
-      const promoAnalytics = {};
-      allOrds.forEach(o => {
-        (o.items || []).forEach(item => {
-          if (!item.itemPromoId) return;
-          const k = String(item.itemPromoId);
-          if (!promoAnalytics[k]) promoAnalytics[k] = { promoId: item.itemPromoId, promoName: item.itemPromoName, promoType: item.itemPromoType, promoValue: item.itemPromoValue, scope: 'item', totalItemUses: 0, affectedOrders: new Set(), totalDiscount: 0, affectedItems: [] };
-          promoAnalytics[k].totalItemUses++;
-          promoAnalytics[k].affectedOrders.add(o.orderNumber);
-          promoAnalytics[k].totalDiscount += n(item.itemDiscountAmount);
-          if (!promoAnalytics[k].affectedItems.includes(item.name)) promoAnalytics[k].affectedItems.push(item.name);
-        });
-        (o.appliedPromos || []).forEach(p => {
-          const k = String(p.id);
-          if (!promoAnalytics[k]) promoAnalytics[k] = { promoId: p.id, promoName: p.name, promoType: p.type, promoValue: p.value, scope: 'cart', totalItemUses: 0, affectedOrders: new Set(), totalDiscount: 0, affectedItems: [] };
-          promoAnalytics[k].totalItemUses++;
-          promoAnalytics[k].affectedOrders.add(o.orderNumber);
-          promoAnalytics[k].totalDiscount += n(p.discountAmount);
-        });
-        if (o.coupon && o.couponDetail) {
-          const k = 'coupon_' + o.coupon;
-          if (!promoAnalytics[k]) promoAnalytics[k] = { promoId: k, promoName: 'Cupom: ' + o.coupon, couponCode: o.coupon, promoType: o.couponDetail.type, promoValue: o.couponDetail.value, scope: 'coupon', totalItemUses: 0, affectedOrders: new Set(), totalDiscount: 0, affectedItems: [] };
-          promoAnalytics[k].totalItemUses++;
-          promoAnalytics[k].affectedOrders.add(o.orderNumber);
-          promoAnalytics[k].totalDiscount += n(o.couponDetail.discountAmount);
-        }
-      });
-      Object.values(promoAnalytics).forEach(pa => { pa.affectedOrders = [...pa.affectedOrders]; });
       const payload = {
-        _meta: { exportedAt: new Date().toISOString(), exportedBy: 'Cardápio Digital Pro', version: '3.0' },
-        todaySummary: { date: today.date, orders: today.orders, originalSubtotal: today.rawOrders.reduce((s,o)=>s+n(o.originalSubtotal||o.subtotal),0), itemDiscounts: today.rawOrders.reduce((s,o)=>s+n(o.itemDiscounts),0), cartDiscounts: today.rawOrders.reduce((s,o)=>s+n(o.discount),0), totalDiscounts: today.rawOrders.reduce((s,o)=>s+n(o.itemDiscounts)+n(o.discount),0), deliveryRevenue: today.rawOrders.reduce((s,o)=>s+n(o.deliveryFee),0), netRevenue: today.revenue, avgTicket: today.avgTicket, byPayment: today.byPayment },
-        allTimeSummary: { totalOrders: allOrds.length, totalGross: allOrds.reduce((s,o)=>s+n(o.originalSubtotal||o.subtotal),0), totalItemDisc: allOrds.reduce((s,o)=>s+n(o.itemDiscounts),0), totalCartDisc: allOrds.reduce((s,o)=>s+n(o.discount),0), totalDiscounts: allOrds.reduce((s,o)=>s+n(o.itemDiscounts)+n(o.discount),0), totalDelivery: allOrds.reduce((s,o)=>s+n(o.deliveryFee),0), totalNet: allOrds.reduce((s,o)=>s+n(o.total),0) },
-        todayOrders: today.rawOrders,
-        allOrders: allOrds,
-        promotionsCatalog: (this.promotions||[]).map(p=>({id:p.id,name:p.name,type:p.type,scope:p.scope||'cart',value:p.value,code:p.code||null,minOrder:p.minOrder||0,expiresAt:p.expiresAt||null,active:p.active,linkedItems:(this.items||[]).filter(i=>i.promoId===p.id).map(i=>({id:i.id,name:i.name,price:i.price,promoPrice:i.promoPrice,discountPct:i.promoPrice?(((i.price-i.promoPrice)/i.price)*100).toFixed(1)+'%':null}))})),
-        promoAnalytics: Object.values(promoAnalytics),
-        itemsCatalog: (this.items||[]).map(i=>{const lp=i.promoId?(this.promotions||[]).find(p=>p.id===i.promoId):null;const cat=this.categories.find(c=>c.id===i.category);return{id:i.id,name:i.name,price:i.price,promoPrice:i.promoPrice||null,promoId:i.promoId||null,promoName:lp?.name||null,promoType:lp?.type||null,promoValue:lp?.value??null,discountPct:(i.promoPrice&&i.price)?(((i.price-i.promoPrice)/i.price)*100).toFixed(1)+'%':null,category:i.category,categoryName:cat?`${cat.icon} ${cat.name}`:i.category,available:i.available,featured:i.featured||false};}),
+        _meta:         { exportedAt: new Date().toISOString(), version: '3.0' },
+        todaySummary:  { date: today.date, orders: today.orders, revenue: today.revenue },
+        allTimeSummary: { totalOrders: allOrds.length, totalNet: allOrds.reduce((s,o)=>s+(o.total||0),0) },
+        todayOrders:   today.rawOrders,
+        allOrders:     allOrds,
       };
       const a = document.createElement('a');
       a.href  = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
@@ -898,72 +796,8 @@ const appAdmin = {
       await this.addAudit('DAY_CLOSED', { date: this.todayStats.date, orders: this.todayStats.orders, revenue: this.todayStats.revenue });
       this.showToast('Dia fechado com sucesso!', 'success', '🎊');
     } catch (e) {
-      await this.logError(e.message || String(e), { stack: e.stack || null, source: 'closeDayReport', type: 'adminWriteError', date: this.todayStats?.date || null }, 'admin');
+      await this.logError(e.message || String(e), { stack: e.stack || null, source: 'closeDayReport', type: 'adminWriteError' }, 'admin');
       this.showToast('Erro ao registrar fechamento.', 'error', '❌');
     }
   },
-  async setupRestaurantRealm() {
-  try {
-    // Verifica se realm já existe
-    const existing = await db.realms.toArray();
-    if (existing.some(r => r.name === 'Restaurante')) return;
-
-    // Cria o realm compartilhado
-    const realmId = await db.realms.add({
-      name: 'Restaurante',
-    });
-
-    // Associa o catálogo ao realm (visível para workers e admin)
-    await db.transaction('rw', db.categories, db.items, db.promotions, async () => {
-      for (const cat of this.categories) {
-        await db.categories.update(cat.id, { realmId });
-      }
-      for (const item of this.items) {
-        await db.items.update(item.id, { realmId });
-      }
-      for (const promo of this.promotions) {
-        await db.promotions.update(promo.id, { realmId });
-      }
-    });
-
-    // Novos pedidos criados pelos clientes/workers também vão para este realm
-    this._restaurantRealmId = realmId;
-
-    this.logInfo('Realm do restaurante criado', {
-      source: 'setupRestaurantRealm', type: 'realmSetup', realmId,
-    }, 'admin');
-
-    this.showToast('Sync cloud configurado!', 'success', '☁️');
-  } catch (e) {
-    await this.logError(e.message || String(e), {
-      source: 'setupRestaurantRealm', type: 'realmSetupError', stack: e.stack || null,
-    }, 'admin');
-  }
-},
-
-// Convida um worker por email
-async inviteWorker(email) {
-  try {
-    const realmId = this._restaurantRealmId
-      ?? (await db.realms.filter(r => r.name === 'Restaurante').first())?.realmId;
-
-    if (!realmId) {
-      this.showToast('Configure o realm primeiro.', 'error', '⚠️'); return;
-    }
-
-    await db.members.add({
-      realmId,
-      email,
-      roles:  ['worker'],
-      invite: true,  // dispara email de convite
-    });
-
-    this.logInfo('Worker convidado', { source: 'inviteWorker', email, realmId }, 'admin');
-    this.showToast(`Convite enviado para ${email}`, 'success', '📧');
-  } catch (e) {
-    await this.logError(e.message || String(e), {
-      source: 'inviteWorker', type: 'memberInviteError', email, stack: e.stack || null,
-    }, 'admin');
-  }
-},
 };
