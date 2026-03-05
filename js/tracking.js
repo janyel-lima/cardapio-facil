@@ -123,15 +123,23 @@ const appTracking = {
   },
 
   /* ── Admin: muda status e registra na timeline ──────────── */
+  //
+  // FIX: substituído `await db.orders.put()` (Dexie — API removida) por
+  // `await this.updateOrder()` (Firebase Firestore, via database.js).
+  // O updateOrder já:
+  //   1. Persiste no Firestore com merge:true
+  //   2. Atualiza this.orderHistory via splice (preserva reatividade Alpine)
+  //
+  // Removido o splice manual que duplicava o update local.
+  // Mantidas as atualizações de estado local (trackingOrder, omSelectedOrder)
+  // para UX imediata antes do onSnapshot confirmar.
   async updateOrderStatus(order, newStatus) {
     if (!order) return;
     const statusInfo = this.trackingStatusMap[newStatus];
     if (!statusInfo) return;
 
     try {
-      // FIX: trabalha em cópia profunda para não mutar o objeto proxy do Alpine.
-      // A mutação direta do argumento `order` causava que a view de rastreamento
-      // pudesse ficar dessincronizada ou lançar erros de proxy não-extensível.
+      // Trabalha em cópia profunda — nunca muta o objeto Proxy do Alpine diretamente.
       const updated = JSON.parse(JSON.stringify(order));
 
       if (!updated.timeline) updated.timeline = [];
@@ -147,21 +155,14 @@ const appTracking = {
       updated.currentStatus = newStatus;
       updated.updatedAt     = event.timestamp;
 
-      // Persiste no Dexie
-      await db.orders.put({ ...updated });
+      // Persiste no Firestore + atualiza this.orderHistory (via database.js)
+      await this.updateOrder(updated);
 
-      // Sincroniza em orderHistory via splice (preserva reatividade)
-      const idx = this.orderHistory.findIndex(o => o.uuid === updated.uuid);
-      if (idx !== -1) {
-        this.orderHistory.splice(idx, 1, { ...updated });
-      }
-
-      // Atualiza a view de rastreamento do cliente
+      // Atualiza views locais imediatamente (UX responsiva, onSnapshot confirma logo após)
       this.trackingOrder      = { ...updated };
       this.trackingStatusNote = '';
 
-      // FIX: sincroniza também com o Gestor de Pedidos (order-manager.js)
-      // caso o detalhe do mesmo pedido esteja aberto em outra aba do admin.
+      // Sincroniza o detalhe do Gestor de Pedidos se o mesmo pedido estiver aberto
       if (this.omSelectedOrder?.uuid === updated.uuid) {
         this.omSelectedOrder = { ...updated };
       }
