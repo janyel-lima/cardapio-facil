@@ -92,8 +92,6 @@ const appCart = {
 
   get cartSubtotal() {
     return this.cart.reduce((s, i) => {
-      // FIX: usa comparação explícita com null para não tratar promoPrice===0
-      // como ausência de promoção (|| i.price retornaria errado nesse caso).
       const base  = (i.promoPrice != null ? i.promoPrice : i.price);
       const comps = (i.complements || []).reduce((sc, c) => sc + c.price, 0);
       return s + (base + comps) * i.qty;
@@ -102,20 +100,94 @@ const appCart = {
 
   get activePromos() { return this.promotions.filter(p => p.active && p.type !== 'coupon'); },
 
-  get deliveryFee() {
-    if (this.checkout.deliveryType === 'pickup') return 0;
-    const free = this.promotions.find(p =>
+  get activeFreeDeliveryPromo() {
+    if (this.checkout?.deliveryType !== 'delivery') return null;
+    return this.promotions.find(p =>
       p.active &&
       p.type === 'freeDelivery' &&
-      this.cartSubtotal >= (p.minOrder || 0),
-    );
-    return free ? 0 : this.config.deliveryFee;
+      this.cartSubtotal >= Number(p.minOrder || 0),
+    ) ?? null;
+  },
+
+  get nextFreeDeliveryPromo() {
+    if (this.checkout?.deliveryType !== 'delivery') return null;
+    const pending = this.promotions
+      .filter(p =>
+        p.active &&
+        p.type === 'freeDelivery' &&
+        Number(p.minOrder) > 0 &&
+        this.cartSubtotal < Number(p.minOrder),
+      )
+      .sort((a, b) => Number(a.minOrder) - Number(b.minOrder));
+    return pending[0] ?? null;
+  },
+
+  get freeDeliveryPromoGap() {
+    const next = this.nextFreeDeliveryPromo;
+    if (!next) return null;
+    return +(Math.max(0, Number(next.minOrder) - this.cartSubtotal)).toFixed(2);
+  },
+
+  // ── Taxa de entrega resolvida ─────────────────────────────────────────────
+  //
+  // No passo 1 (items) nunca inclui frete no total — o cliente ainda não
+  // informou o endereço, então qualquer valor seria um placeholder enganoso.
+  // O frete só é calculado e exibido a partir do passo 2 (address).
+  get deliveryFee() {
+    if (this.checkout.deliveryType === 'pickup') return 0;
+    if (this.cartStep === 'items') return 0;          // sem frete no passo 1
+    if (this.activeFreeDeliveryPromo) return 0;
+    const result = this.currentDeliveryFeeResult;
+    return Number(result.fee ?? 0);
+  },
+
+  get deliveryIsFree() {
+    if (!this.deliveryFeeKnown) return false;
+    return this.deliveryFee === 0;
+  },
+
+  get deliveryIsFreeByPromo() {
+    return this.activeFreeDeliveryPromo != null;
+  },
+
+  // ── Taxa de entrega já é conhecida? ──────────────────────────────────────
+  //
+  // No passo 1 (items) sempre retorna false → exibe "—" em vez de um valor
+  // calculado antes de o cliente informar o endereço.
+  get deliveryFeeKnown() {
+    if (this.checkout?.deliveryType !== 'delivery') return true;
+    if (this.cartStep === 'items') return false;       // desconhecido no passo 1
+    if (this.activeFreeDeliveryPromo) return true;
+    if (this.config?.deliveryZones?.length) return this.deliveryRouteKm != null;
+    return Number(this.config?.deliveryFee ?? 0) > 0;
+  },
+
+  get deliveryOutOfRange() {
+    if (this.checkout.deliveryType !== 'delivery') return false;
+    if (!this.config.deliveryZones?.length)        return false;
+    if (this.deliveryRouteKm == null)              return false;
+    return this.currentDeliveryFeeResult?.outOfRange === true;
+  },
+
+  // ── Tempo estimado de entrega ─────────────────────────────────────────────
+  //
+  // Resolução em cascata:
+  //   1. Retirada                    → config.deliveryTime (tempo do balcão)
+  //   2. Zona matched com deliveryTime → zone.deliveryTime   (tempo da faixa)
+  //   3. Zona matched sem deliveryTime → config.deliveryTime (fallback global)
+  //   4. Sem zonas / sem rota         → config.deliveryTime
+  //   5. Qualquer valor vazio         → null (não exibe)
+  get currentDeliveryTime() {
+    const fallback = this.config?.deliveryTime?.trim() || null;
+    if (this.checkout?.deliveryType !== 'delivery') return fallback;
+
+    const zone = this.currentDeliveryFeeResult?.zone;
+    if (zone?.deliveryTime?.trim()) return zone.deliveryTime.trim();
+
+    return fallback;
   },
 
   get discountValue() {
-    // Apenas descontos de CARRINHO (scope:'cart' ou sem scope definido).
-    // Promoções scope:'item' já estão embutidas em cartSubtotal via promoPrice
-    // e NÃO devem ser somadas aqui novamente (dupla contagem).
     let discount = 0;
     for (const p of this.promotions.filter(p =>
       p.active &&
@@ -159,9 +231,9 @@ const appCart = {
         _key:        key,
         id:          item.id,
         name:        item.name,
-        price:       item.price,                // preço de tabela original (nunca muda)
-        promoPrice:  item.promoPrice  ?? null,  // preço com desconto de item (null = sem promo)
-        promoId:     item.promoId     ?? null,  // id da promoção vinculada ao item
+        price:       item.price,
+        promoPrice:  item.promoPrice  ?? null,
+        promoId:     item.promoId     ?? null,
         image:       item.image,
         qty:         qty  || 1,
         note:        note || '',
@@ -237,15 +309,24 @@ const appCart = {
       this.showToast(`Pedido mínimo: ${this.formatMoney(this.config.minOrder)}`, 'error', '⚠️');
       return;
     }
+    if (this.deliveryOutOfRange) {
+      const lastZone = [...(this.config.deliveryZones || [])].sort((a, b) => b.maxKm - a.maxKm)[0];
+      const limit    = lastZone ? `máx. ${lastZone.maxKm} km` : '';
+      this.showToast(
+        `Endereço fora da área de entrega${limit ? ' (' + limit + ')' : ''}.`,
+        'error', '🚫',
+      );
+      return;
+    }
     if (this.checkout.payment === 'pix') { this.openPixModal(); return; }
     this._finishOrder();
   },
 
   openPixModal() {
-    this.pixStatus   = 'pending';
-    this.pixCopied   = false;
+    this.pixStatus    = 'pending';
+    this.pixCopied    = false;
     this.pixCountdown = 300;
-    this.showCart    = false;
+    this.showCart     = false;
     this.showPixModal = true;
     clearInterval(this._pixTimer);
     this._pixTimer = setInterval(() => {
@@ -302,13 +383,26 @@ const appCart = {
       msg += `👤 *Cliente:* ${this.checkout.name}\n📱 *WhatsApp:* ${this.checkout.phone}\n`;
       if (this.checkout.deliveryType === 'delivery') {
         msg += `📍 *Endereço:* ${this.checkout.address}${this.checkout.complement ? ', ' + this.checkout.complement : ''}\n`;
+        const feeResult = this.currentDeliveryFeeResult;
+        if (feeResult?.zone?.label) {
+          msg += `📏 *Zona:* ${feeResult.zone.label}`;
+          if (this.deliveryRouteKm != null) {
+            const kmStr = this.deliveryRouteKm < 1
+              ? Math.round(this.deliveryRouteKm * 1000) + ' m'
+              : this.deliveryRouteKm.toFixed(1).replace('.', ',') + ' km';
+            msg += ` (${kmStr} de rota${this.deliveryRouteFailed ? ' ~est.' : ''})`;
+          }
+          msg += '\n';
+        }
+        if (this.deliveryIsFreeByPromo) {
+          msg += `🎉 *Frete grátis* (${this.activeFreeDeliveryPromo?.name || 'promoção'})\n`;
+        }
       } else {
         msg += `🏃 *Retirada no local*\n`;
       }
 
       msg += '\n📦 *ITENS:*\n';
       this.cart.forEach(item => {
-        // FIX: mesma correção de null check aplicada aqui
         const base  = (item.promoPrice != null ? item.promoPrice : item.price);
         const comps = (item.complements || []).reduce((s, c) => s + c.price, 0);
         msg += `• ${item.qty}x ${item.name} — ${this.formatMoney((base + comps) * item.qty)}\n`;
@@ -324,7 +418,9 @@ const appCart = {
       msg += `\n💰 *RESUMO:*\nSubtotal: ${this.formatMoney(this.cartSubtotal)}\n`;
       if (this.discountValue > 0) msg += `Desconto: -${this.formatMoney(this.discountValue)}\n`;
       if (this.checkout.deliveryType === 'delivery') {
-        msg += `Taxa entrega: ${this.deliveryFee === 0 ? 'Grátis 🎉' : this.formatMoney(this.deliveryFee)}\n`;
+        msg += this.deliveryIsFreeByPromo
+          ? `Taxa entrega: Grátis 🎉 (${this.activeFreeDeliveryPromo?.name})\n`
+          : `Taxa entrega: ${this.formatMoney(this.deliveryFee)}\n`;
       }
       msg += `*TOTAL: ${this.formatMoney(this.orderTotal)}*\n\n`;
       msg += `💳 *Pagamento:* ${{ pix: 'PIX', card: 'Cartão', cash: 'Dinheiro' }[this.checkout.payment]}\n`;
@@ -345,6 +441,18 @@ const appCart = {
   async saveOrderToHistory(orderNum) {
     const orderId = this.uuid();
     try {
+      const delivery = this.checkout.deliveryType === 'delivery'
+        ? JSON.parse(JSON.stringify(this.deliveryPayload))
+        : { type: 'pickup', address: null, coords: null, label: 'Retirada no local' };
+
+      const storeSnapshot = {
+        lat:   this.config.storeLat  ?? null,
+        lng:   this.config.storeLng  ?? null,
+        label: this.storeAddressFormatted || null,
+      };
+
+      const feeResult = this.currentDeliveryFeeResult;
+
       const order = {
         uuid:        orderId,
         orderNumber: orderNum || this.nextOrderNumber(),
@@ -355,31 +463,30 @@ const appCart = {
         deliveryType: this.checkout.deliveryType,
         payment:      this.checkout.payment,
 
-        // ── rastreabilidade financeira completa ──────────────────────────────
-        // originalSubtotal: preço de tabela × qty + complementos (sem nenhum desconto)
+        delivery:     delivery,
+        storeAtOrder: storeSnapshot,
+
+        deliveryRouteKm:     this.deliveryRouteKm     ?? null,
+        deliveryRouteFailed: this.deliveryRouteFailed  ?? false,
+        deliveryZoneLabel:   feeResult?.zone?.label    ?? null,
+        deliveryZoneMaxKm:   feeResult?.zone?.maxKm    ?? null,
+
         originalSubtotal: this.cart.reduce((s, i) => {
           const comps = (i.complements || []).reduce((sc, c) => sc + c.price, 0);
           return s + (i.price + comps) * i.qty;
         }, 0),
 
-        // itemDiscounts: economia total de promoções vinculadas aos itens.
-        // FIX: usa comparação explícita com null — (i.promoPrice || i.price)
-        // era incorreto quando promoPrice===0, geraria desconto=price*qty.
         itemDiscounts: this.cart.reduce((s, i) => {
           const unitDiscount = i.price - (i.promoPrice != null ? i.promoPrice : i.price);
           return s + unitDiscount * i.qty;
         }, 0),
 
-        // subtotal: após descontos de item (= cartSubtotal)
         subtotal:    this.cartSubtotal,
-        // discount: descontos de carrinho (promos automáticas scope:cart + cupom)
         discount:    this.discountValue,
         deliveryFee: this.deliveryFee,
         total:       this.orderTotal,
 
-        // ── itens com snapshot completo de preço e promoção ─────────────────
         items: this.cart.map(i => {
-          // Fallback: re-consulta o catálogo se promoId não veio propagado do carrinho.
           const catalogItem      = this.items.find(p => p.id === i.id);
           const itemPromoId      = i.promoId ?? catalogItem?.promoId ?? null;
           const linkedPromo      = itemPromoId
@@ -387,7 +494,6 @@ const appCart = {
             : null;
 
           const originalPrice    = i.price;
-          // FIX: null check explícito (mesma correção de cartSubtotal)
           const unitPrice        = (i.promoPrice != null ? i.promoPrice : i.price);
           const comps            = (i.complements || []).reduce((sc, c) => sc + c.price, 0);
           const itemDiscountUnit = originalPrice - unitPrice;
@@ -412,15 +518,12 @@ const appCart = {
           };
         }),
 
-        // ── snapshot das promoções de carrinho no momento do pedido ─────────
         coupon: this.appliedCoupon?.code || '',
         couponDetail: this.appliedCoupon
           ? {
               code:  this.appliedCoupon.code,
               type:  this.appliedCoupon.type,
               value: this.appliedCoupon.value,
-              // FIX: calcula discountAmount com o mesmo subtotal usado em discountValue
-              // para garantir consistência entre couponDetail e o campo discount do pedido.
               discountAmount: this.appliedCoupon.type === 'percentage'
                 ? +(this.cartSubtotal * (this.appliedCoupon.value / 100)).toFixed(2)
                 : +(this.appliedCoupon.value).toFixed(2),
@@ -442,12 +545,14 @@ const appCart = {
             return { id: p.id, name: p.name, type: p.type, value: p.value, discountAmount: discAmt };
           }),
 
-        freeDeliveryPromo: (() => {
-          const fp = this.promotions.find(p =>
-            p.active && p.type === 'freeDelivery' && this.cartSubtotal >= (p.minOrder || 0),
-          );
-          return fp ? { id: fp.id, name: fp.name, savedAmount: this.config.deliveryFee } : null;
-        })(),
+        freeDeliveryPromo: this.deliveryIsFreeByPromo
+          ? {
+              id:          this.activeFreeDeliveryPromo?.id   ?? null,
+              name:        this.activeFreeDeliveryPromo?.name ?? null,
+              minOrder:    Number(this.activeFreeDeliveryPromo?.minOrder || 0),
+              savedAmount: this.config.deliveryFee,
+            }
+          : null,
 
         date:      new Date().toLocaleDateString('pt-BR'),
         time:      new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
@@ -465,25 +570,29 @@ const appCart = {
         updatedAt: new Date().toISOString(),
       };
 
-      // Limpa carrinho e estado de checkout ANTES de persistir para evitar
-      // double-submit se o usuário interagir rapidamente.
       this.cart.splice(0);
       this.checkout      = { name: '', phone: '', address: '', complement: '', deliveryType: 'delivery', payment: 'pix' };
       this.appliedCoupon = null;
       this.showCart      = false;
 
+      if (typeof this.cartResetAddress === 'function') this.cartResetAddress();
+
       const plainOrder = JSON.parse(JSON.stringify(order));
       await this.persistOrder(plainOrder);
       await this.saveOrderCounter();
       await this.addAudit('ORDER_PLACED', {
-        orderNumber:   plainOrder.orderNumber,
-        uuid:          orderId,
-        total:         plainOrder.total,
-        payment:       plainOrder.payment,
-        itemCount:     plainOrder.items.length,
-        customer:      plainOrder.name,
-        itemDiscounts: plainOrder.itemDiscounts,
-        cartDiscounts: plainOrder.discount,
+        orderNumber:      plainOrder.orderNumber,
+        uuid:             orderId,
+        total:            plainOrder.total,
+        payment:          plainOrder.payment,
+        itemCount:        plainOrder.items.length,
+        customer:         plainOrder.name,
+        itemDiscounts:    plainOrder.itemDiscounts,
+        cartDiscounts:    plainOrder.discount,
+        hasCoords:        !!(delivery.coords?.lat),
+        deliveryZone:     plainOrder.deliveryZoneLabel    || null,
+        deliveryRouteKm:  plainOrder.deliveryRouteKm      || null,
+        freeDeliveryPromo: plainOrder.freeDeliveryPromo?.name || null,
       });
 
       this.showToast('Pedido enviado! 🎉', 'success', '✅');

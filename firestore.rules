@@ -31,11 +31,19 @@ service cloud.firestore {
     function isWorker() { return role() == 'admin' || role() == 'worker'; }
 
 
-    // ── Config ────────────────────────────────────────────────────────────────
+    // ── Config público ────────────────────────────────────────────────────────
     match /config/{doc} {
       allow read:  if true;
       allow write: if isAdmin();
     }
+
+    // ── AdminConfig (protegida — senha admin, chave PIX, dados sensíveis) ─────
+    // Leitura restrita a admin autenticado; nunca exposta ao cliente final.
+    match /adminConfig/{doc} {
+      allow read:  if isAdmin();
+      allow write: if isAdmin();
+    }
+
 
     // ── Meta (orderCounter) ───────────────────────────────────────────────────
     match /meta/{doc} {

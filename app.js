@@ -25,12 +25,13 @@ function menuApp() {
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appCart));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appLogger));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appAuth));
-  
+   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appStoreMap));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appAdmin));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appTracking));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appOrderManager));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appProductCard));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appPromoFilter));
+  Object.defineProperties(component, Object.getOwnPropertyDescriptors(appAddress));
 
   
   // 2. Método de Inicialização (chamado via x-init="init()")
@@ -172,6 +173,11 @@ this._loadUserProfile();
           } else {
             this.omLeaveTab();
           }
+           if (tab === 'store') {
+         this.$nextTick(() => this.storeMapOpen());
+       } else {
+         this.storeMapDestroy();
+       }
         } catch (e) {
           this.logWarn(e.message || String(e), {
             source: 'watcher:adminTab', type: 'watcherError', tab, stack: e.stack || null,
@@ -201,6 +207,12 @@ this._loadUserProfile();
         this.showProductModal  = false;
         this.showThemePicker   = false;
         this.showOrderTracking = false;
+
+        // Se o carrinho estava no passo de endereço, destrói o mapa ao fechar
+        if (this.cartStep === 'address') {
+          this._mapDestroy();
+          this.cartStep = 'items';
+        }
 
         // Fecha o formulário de produto mas mantém o painel admin aberto
         if (this.showProductForm) {

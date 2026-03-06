@@ -10,32 +10,19 @@ const appAdmin = {
   clearHistoryPasswordError:  '',
 
   // ── Estado: upload de imagem ───────────────────────────────────────────────
-  //
-  // Declarados como valores escalares para garantir que o proxy do Alpine os
-  // rastreie desde o primeiro render — sem isso, mutações no finally/catch
-  // não disparam reatividade em alguns navegadores.
   _imageUploading:       false,
   _imageUploadProgress:  0,
 
   // ── Estado: edição de promoção ─────────────────────────────────────────────
-  _promoFormMode:  'add',   // 'add' | 'edit'
+  _promoFormMode:  'add',
   _editingPromoId: null,
 
   // ── Estado: edição de categoria ────────────────────────────────────────────
-  _catFormMode:   'add',    // 'add' | 'edit'
+  _catFormMode:   'add',
   _editingCatId:  null,
 
 
   // ── Upload de imagem → Firebase Storage ───────────────────────────────────
-  //
-  // Fluxo:
-  //   1. Valida tipo (image/*) e tamanho máximo (5 MB)
-  //   2. Envia via UploadTask com progresso reativo
-  //   3. Obtém downloadURL público e aplica em editingProduct.image
-  //
-  // Path: items/{timestamp}_{slug_do_nome}
-  // Arquivos antigos NÃO são deletados automaticamente — podem estar em uso
-  // por outros registros. Limpeza fica a cargo de Cloud Function, se necessário.
   async uploadItemImage(event) {
     const input = event.target;
     const file  = input.files?.[0];
@@ -89,25 +76,16 @@ const appAdmin = {
     } finally {
       this._imageUploading      = false;
       this._imageUploadProgress = 0;
-      // Limpa o input APÓS resetar os flags — evita condição de corrida onde
-      // o Alpine já desmontou o nó antes do finally em alguns browsers.
-      try { input.value = ''; } catch (_) { /* input pode não existir mais */ }
+      try { input.value = ''; } catch (_) {}
     }
   },
 
 
   // ── Salva configurações da loja no Firestore ───────────────────────────────
-  //
-  // Persiste this.config em /config/main com merge:true (preserva campos extras
-  // que possam ter sido adicionados fora deste cliente).
-  //
-  // adminPass é armazenado em texto plano intencionalmente — o sistema usa
-  // comparação direta para a confirmação de ações destrutivas (limpar histórico).
-  // Para ambientes de produção com múltiplos usuários, use Firebase Auth.
   async saveConfig() {
     try {
-      // Snapshot limpo: evita persistir propriedades internas do Alpine (__ob__, etc.)
       const payload = {
+        // ── Dados básicos ──────────────────────────────────────────────────
         restaurantName: this.config.restaurantName ?? '',
         city:           this.config.city           ?? '',
         whatsapp:       this.config.whatsapp        ?? '',
@@ -117,11 +95,43 @@ const appAdmin = {
         deliveryTime:   this.config.deliveryTime    ?? '',
         adminPass:      this.config.adminPass        ?? '',
         isOpen:         !!this.config.isOpen,
-        updatedAt:      new Date().toISOString(),
+
+        // ── Zonas de entrega por faixa de km ──────────────────────────────
+        // FIX: normaliza maxKm e fee para Number antes de persistir.
+        // x-model em inputs entrega strings; sem isso "5" vai para o Firestore
+        // e address.js faz (deliveryRouteKm <= "5") que sempre é false.
+        deliveryZones: (this.config.deliveryZones || []).map(z => ({
+          id:    z.id,
+          label: z.label,
+          maxKm: Number(z.maxKm),
+          fee:   Number(z.fee),
+        })),
+        deliveryFeeOutOfRange: this.config.deliveryFeeOutOfRange != null
+                                 ? Number(this.config.deliveryFeeOutOfRange)
+                                 : null,
+
+        // ── Endereço estruturado da loja ───────────────────────────────────
+        storeRua:         this.config.storeRua         ?? '',
+        storeNumero:      this.config.storeNumero       ?? '',
+        storeComplemento: this.config.storeComplemento  ?? '',
+        storeBairro:      this.config.storeBairro       ?? '',
+        storeCidade:      this.config.storeCidade       ?? '',
+        storeUf:          this.config.storeUf           ?? '',
+        storeCep:         this.config.storeCep          ?? '',
+
+        storeLat: this.config.storeLat != null ? Number(this.config.storeLat) : null,
+        storeLng: this.config.storeLng != null ? Number(this.config.storeLng) : null,
+
+        updatedAt: new Date().toISOString(),
       };
 
       await firestoreDb.collection('config').doc('main').set(payload, { merge: true });
-      await this.addAudit('STORE_SAVED', { restaurantName: payload.restaurantName });
+      await this.addAudit('STORE_SAVED', {
+        restaurantName:  payload.restaurantName,
+        hasStoreAddress: !!(payload.storeRua),
+        hasStoreCoords:  !!(payload.storeLat && payload.storeLng),
+        deliveryZones:   payload.deliveryZones.length,
+      });
       this.showToast('Configurações salvas!', 'success', '💾');
 
     } catch (e) {
@@ -131,6 +141,50 @@ const appAdmin = {
       }, 'admin');
       this.showToast('Erro ao salvar configurações.', 'error', '❌');
     }
+  },
+
+
+  // ── Zonas de entrega ───────────────────────────────────────────────────────
+
+  addDeliveryZone() {
+    const label = (this.newDeliveryZone.label || '').trim();
+    const maxKm = parseFloat(this.newDeliveryZone.maxKm);
+    const fee   = parseFloat(this.newDeliveryZone.fee);
+
+    if (!maxKm || maxKm <= 0) {
+      this.showToast('Informe o limite em km', 'error', '⚠️'); return;
+    }
+    if (isNaN(fee) || fee < 0) {
+      this.showToast('Informe a taxa (pode ser 0 para grátis)', 'error', '⚠️'); return;
+    }
+    if ((this.config.deliveryZones || []).some(z => z.maxKm === +maxKm.toFixed(1))) {
+      this.showToast(`Já existe uma zona com limite de ${maxKm} km`, 'error', '⚠️'); return;
+    }
+
+    if (!Array.isArray(this.config.deliveryZones)) this.config.deliveryZones = [];
+
+    this.config.deliveryZones.push({
+      id:     this.uuid(),
+      label:  label || `Até ${maxKm} km`,
+      maxKm:  +maxKm.toFixed(1),
+      fee:    +fee.toFixed(2),
+    });
+
+    // Ordena por maxKm e força reatividade Alpine
+    this.config.deliveryZones.sort((a, b) => a.maxKm - b.maxKm);
+    this.config.deliveryZones = [...this.config.deliveryZones];
+
+    this.newDeliveryZone = { label: '', maxKm: '', fee: '' };
+    this.showToast('Zona adicionada! Salve as configurações.', 'success', '🛵');
+  },
+
+  removeDeliveryZone(id) {
+    if (!Array.isArray(this.config.deliveryZones)) return;
+    const idx = this.config.deliveryZones.findIndex(z => z.id === id);
+    if (idx === -1) return;
+    this.config.deliveryZones.splice(idx, 1);
+    this.config.deliveryZones = [...this.config.deliveryZones];
+    this.showToast('Zona removida. Salve as configurações.', 'success', '🗑️');
   },
 
 
@@ -159,9 +213,7 @@ const appAdmin = {
         prevHash + JSON.stringify({ id: entry.id, timestamp: entry.timestamp, action, data }),
       );
       this.auditLog.push(entry);
-
       await firestoreDb.collection('auditLog').doc(entry.id).set(entry);
-
     } catch (e) {
       await this.logError(e.message || String(e),
         { stack: e.stack || null, source: 'addAudit', type: 'auditWriteError', action }, 'admin');
@@ -247,7 +299,6 @@ const appAdmin = {
     }
   },
 
-  // ── Inicia edição inline de categoria ─────────────────────────────────────
   startEditCategory(cat) {
     this._editingCatId = cat.id;
     this._catFormMode  = 'edit';
@@ -478,9 +529,11 @@ const appAdmin = {
         name:     this.newPromo.name.trim(),
         type:     this.newPromo.type,
         scope:    promoScope,
-        value:    this.newPromo.value    || 0,
+        // FIX: x-model entrega strings de inputs numéricos — Number() garante tipo correto.
+        // Sem isso "40" (string) salvo no Firestore faz cartSubtotal >= "40" falhar.
+        value:    Number(this.newPromo.value)    || 0,
         code:     this.newPromo.code.trim().toUpperCase(),
-        minOrder: this.newPromo.minOrder || 0,
+        minOrder: Number(this.newPromo.minOrder) || 0,
         expiresAt: this.newPromo.expiresAt,
         active:   true,
       };
@@ -488,7 +541,8 @@ const appAdmin = {
       this.newPromo = { name: '', type: 'percentage', scope: 'cart', value: 0, code: '', minOrder: 0, expiresAt: '' };
       await this.savePromotions();
       await this.addAudit('PROMO_CREATED', {
-        name: promo.name, type: promo.type, scope: promo.scope, value: promo.value, code: promo.code,
+        name: promo.name, type: promo.type, scope: promo.scope,
+        value: promo.value, code: promo.code, minOrder: promo.minOrder,
       });
       this.showToast('Promoção criada!', 'success', '🔥');
     } catch (e) {
@@ -500,7 +554,6 @@ const appAdmin = {
     }
   },
 
-  // ── Inicia edição de promoção ──────────────────────────────────────────────
   startEditPromo(promo) {
     this._editingPromoId = promo.id;
     this._promoFormMode  = 'edit';
@@ -544,15 +597,15 @@ const appAdmin = {
         name:      this.newPromo.name.trim(),
         type:      this.newPromo.type,
         scope,
-        value:     this.newPromo.value    || 0,
+        // FIX: mesmo que addPromo — garante number no Firestore
+        value:     Number(this.newPromo.value)    || 0,
         code:      (this.newPromo.code || '').trim().toUpperCase(),
-        minOrder:  this.newPromo.minOrder || 0,
+        minOrder:  Number(this.newPromo.minOrder) || 0,
         expiresAt: this.newPromo.expiresAt || '',
       };
 
       this.promotions.splice(idx, 1, updated);
 
-      // Recalcula promoPrice dos itens vinculados
       const linked = this.items.filter(i => i.promoId === updated.id);
       if (linked.length > 0) {
         this.items.forEach((item, i) => {
@@ -570,7 +623,9 @@ const appAdmin = {
       }
 
       await this.savePromotions();
-      await this.addAudit('PROMO_UPDATED', { name: updated.name, type: updated.type, id: updated.id });
+      await this.addAudit('PROMO_UPDATED', {
+        name: updated.name, type: updated.type, id: updated.id, minOrder: updated.minOrder,
+      });
       this.showToast('Promoção atualizada!', 'success', '✏️');
       this.cancelPromoEdit();
 
@@ -875,7 +930,7 @@ const appAdmin = {
 
       const ws2 = XLSX.utils.aoa_to_sheet([
         ['UUID', 'Nº Pedido', 'Data', 'Hora', 'Cliente', 'Tel', 'Pagamento', 'Tipo',
-          'Bruto', 'Desc. Item', 'Desc. Carrinho', 'Entrega', 'Total', 'Cupom', 'Hash', 'Integridade'],
+          'Bruto', 'Desc. Item', 'Desc. Carrinho', 'Entrega', 'Total', 'Cupom', 'Zona Entrega', 'Hash', 'Integridade'],
         ...today.rawOrders.map(o => {
           const integrity = this.verifyOrderHash(o) ? 'íntegro' : 'ADULTERADO';
           return [
@@ -883,17 +938,19 @@ const appAdmin = {
             o.name||'-', o.phone||'-',
             payLabel[o.payment]||o.payment||'-', o.deliveryType||'-',
             n(o.originalSubtotal||o.subtotal), n(o.itemDiscounts), n(o.discount),
-            n(o.deliveryFee), n(o.total), o.coupon||'—', o.hash||'-', integrity,
+            n(o.deliveryFee), n(o.total), o.coupon||'—',
+            o.deliveryZoneLabel||'—', o.hash||'-', integrity,
           ];
         }),
       ]);
       XLSX.utils.book_append_sheet(wb, ws2, 'Pedidos do Dia');
 
       const ws5 = XLSX.utils.aoa_to_sheet([
-        ['UUID', 'Nº Pedido', 'Data', 'Hora', 'Cliente', 'Pagamento', 'Total'],
+        ['UUID', 'Nº Pedido', 'Data', 'Hora', 'Cliente', 'Pagamento', 'Total', 'Zona Entrega'],
         ...allOrds.map(o => [
           o.uuid||'-', o.orderNumber||'-', this._normalizeOrderDate(o), o.time||'-',
           o.name||'-', payLabel[o.payment]||o.payment||'-', n(o.total),
+          o.deliveryZoneLabel||'—',
         ]),
       ]);
       XLSX.utils.book_append_sheet(wb, ws5, 'Histórico Geral');
@@ -912,10 +969,10 @@ const appAdmin = {
       const today = this.todayStats;
       const q     = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
       const n     = v => (typeof v === 'number' ? v : 0);
-      const header = ['uuid','orderNumber','date','time','customer','payment','total'].map(q);
+      const header = ['uuid','orderNumber','date','time','customer','payment','total','deliveryZone'].map(q);
       const rows = today.rawOrders.map(o =>
         [q(o.uuid||''),q(o.orderNumber||''),q(o.date||''),q(o.time||''),q(o.name||''),
-         q(o.payment||''),n(o.total)].join(',')
+         q(o.payment||''),n(o.total),q(o.deliveryZoneLabel||'')].join(',')
       );
       const csv = [header.join(','), ...rows].join('\n');
       const a   = document.createElement('a');
