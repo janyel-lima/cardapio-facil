@@ -29,9 +29,9 @@ const db   = admin.firestore();
 const auth = admin.auth();
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-const sleep  = ms => new Promise(r => setTimeout(r, ms));
-const log    = (icon, msg) => console.log(`${icon}  ${msg}`);
-const id     = () => Math.floor(Date.now() * Math.random()).toString(36);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const log   = (icon, msg) => console.log(`${icon}  ${msg}`);
+const id    = () => Math.floor(Date.now() * Math.random()).toString(36);
 
 async function clearCollection(name) {
   const snap = await db.collection(name).get();
@@ -63,33 +63,92 @@ async function upsertUser(email, password, displayName, role) {
 // DADOS DA LOJA DE DEMONSTRAÇÃO
 // ══════════════════════════════════════════════════════════════════════════
 
+// ── Zonas de entrega ───────────────────────────────────────────────────────
+//
+// Estrutura: { id, label, maxKm, fee, deliveryTime? }
+//   maxKm        — distância máxima de rota (OSRM) em km para esta faixa
+//   fee          — taxa cobrada nesta faixa (número, não string)
+//   deliveryTime — tempo estimado exibido ao cliente (opcional)
+//                  se omitido, usa config.deliveryTime como fallback
+//
+// As zonas são ordenadas por maxKm ASC em runtime pelo address.js.
+// A primeira zona onde distância <= maxKm é aplicada.
+//
+// deliveryFeeOutOfRange:
+//   null   → bloqueia pedido quando excede a última zona
+//   number → cobra essa taxa extra (ex: 20.00)
+const DELIVERY_ZONES = [
+  {
+    id:           'zona-centro',
+    label:        'Centro',
+    maxKm:        3,
+    fee:          5.00,
+    deliveryTime: '20-30 min',
+  },
+  {
+    id:           'zona-medio',
+    label:        'Zona Intermediária',
+    maxKm:        7,
+    fee:          8.00,
+    deliveryTime: '35-50 min',
+  },
+  {
+    id:           'zona-periferia',
+    label:        'Periferia',
+    maxKm:        12,
+    fee:          12.00,
+    deliveryTime: '50-70 min',
+  },
+];
+
 // ── Config ─────────────────────────────────────────────────────────────────
 const CONFIG = {
   restaurantName: 'Loja Demo',
-  city:           'São Paulo, SP',
-  whatsapp:       '5511999999999',
+  city:           'Arapiraca, AL',
+  whatsapp:       '5582999999999',
   pixKey:         'demo@lojademo.com.br',
+
+  // Taxa flat: usada quando não há zonas, ou como fallback se OSRM falhar
   deliveryFee:    5.00,
+
   minOrder:       20.00,
+
+  // Tempo padrão: exibido para retirada no balcão e como fallback
+  // quando a zona matched não tem deliveryTime próprio
   deliveryTime:   '30-45 min',
+
   isOpen:         true,
-  updatedAt:      new Date().toISOString(),
+  adminPass:      'admin123',
+
+  // Zonas de entrega por faixa de distância de rota
+  deliveryZones:          DELIVERY_ZONES,
+  deliveryFeeOutOfRange:  null, // null = bloqueia pedidos fora da última zona
+
+  // Endereço da loja (ponto de origem para cálculo de rota)
+  storeRua:         'Rua Comendador Leão',
+  storeNumero:      '198',
+  storeComplemento: '',
+  storeBairro:      'Centro',
+  storeCidade:      'Arapiraca',
+  storeUf:          'AL',
+  storeCep:         '57300-140',
+  storeLat:         -9.7514,
+  storeLng:         -36.6605,
+
+  updatedAt: new Date().toISOString(),
 };
 
-// ── Categorias — uma de cada ────────────────────────────────────────────────
-// Representa os tipos de categoria que o sistema suporta.
+// ── Categorias ─────────────────────────────────────────────────────────────
 const CATEGORIES = [
   { id: 'pratos',      name: 'Pratos',      icon: '🍽️', active: true  },
   { id: 'bebidas',     name: 'Bebidas',     icon: '🥤', active: true  },
   { id: 'sobremesas',  name: 'Sobremesas',  icon: '🍰', active: true  },
   { id: 'combos',      name: 'Combos',      icon: '🎁', active: true  },
-  // Categoria desativada — demonstra o toggle sem excluir
   { id: 'temporarios', name: 'Temporários', icon: '📦', active: false },
 ];
 
-// ── Promoções — uma de cada tipo possível ───────────────────────────────────
+// ── Promoções ──────────────────────────────────────────────────────────────
 const PROMOS = [
-  // 1. Desconto percentual automático no carrinho (scope: cart)
   {
     id:        'promo-pct',
     name:      'Desconto de 10%',
@@ -101,7 +160,6 @@ const PROMOS = [
     expiresAt: '',
     active:    true,
   },
-  // 2. Desconto fixo em R$ automático no carrinho (scope: cart)
   {
     id:        'promo-fixed',
     name:      'R$ 5 de desconto',
@@ -113,7 +171,6 @@ const PROMOS = [
     expiresAt: '',
     active:    true,
   },
-  // 3. Frete grátis automático (scope: cart)
   {
     id:        'promo-freight',
     name:      'Frete Grátis',
@@ -125,7 +182,6 @@ const PROMOS = [
     expiresAt: '',
     active:    true,
   },
-  // 4. Cupom de desconto percentual (requer código)
   {
     id:        'promo-coupon-pct',
     name:      'Cupom 15% OFF',
@@ -137,7 +193,6 @@ const PROMOS = [
     expiresAt: '',
     active:    true,
   },
-  // 5. Cupom de desconto fixo (requer código)
   {
     id:        'promo-coupon-fixed',
     name:      'Cupom R$ 10',
@@ -149,7 +204,6 @@ const PROMOS = [
     expiresAt: '',
     active:    true,
   },
-  // 6. Desconto fixo vinculado ao item (scope: item) — usado em ITEMS abaixo
   {
     id:        'promo-item',
     name:      'Oferta do Dia',
@@ -161,7 +215,6 @@ const PROMOS = [
     expiresAt: '',
     active:    true,
   },
-  // 7. Promoção inativa — demonstra toggle on/off
   {
     id:        'promo-inativa',
     name:      'Promoção Inativa',
@@ -175,108 +228,96 @@ const PROMOS = [
   },
 ];
 
-// ── Produtos — um de cada configuração possível ────────────────────────────
-//
-// Variações cobertas:
-//   A. Produto simples (sem complementos)
-//   B. Produto com complemento de escolha única obrigatória (radio)
-//   C. Produto com complemento múltiplo opcional (checkbox)
-//   D. Produto com múltiplos grupos de complementos (obrigatório + opcional)
-//   E. Produto com promoPrice via promoção vinculada (scope:item)
-//   F. Produto indisponível (available: false)
-//   G. Produto destaque (featured: true)
-//   H. Produto em categoria desativada
-//   I. Produto de combo (categoria combos)
-
+// ── Produtos ───────────────────────────────────────────────────────────────
 const ITEMS = [
 
-  // ── A. Simples — sem complementos ─────────────────────────────────────────
+  // A. Simples
   {
-    id:        1001,
-    name:      'Prato do Dia',
-    category:  'pratos',
-    price:     22.00,
-    promoPrice: null,
-    promoId:   null,
-    desc:      'Prato simples sem opções adicionais. Serve 1 pessoa.',
-    image:     'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500',
-    available: true,
-    featured:  false,
+    id:          1001,
+    name:        'Prato do Dia',
+    category:    'pratos',
+    price:       22.00,
+    promoPrice:  null,
+    promoId:     null,
+    desc:        'Prato simples sem opções adicionais. Serve 1 pessoa.',
+    image:       'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500',
+    available:   true,
+    featured:    false,
     complements: [],
   },
 
-  // ── B. Escolha única obrigatória ───────────────────────────────────────────
+  // B. Escolha única obrigatória
   {
-    id:        1002,
-    name:      'Macarrão',
-    category:  'pratos',
-    price:     28.00,
+    id:         1002,
+    name:       'Macarrão',
+    category:   'pratos',
+    price:      28.00,
     promoPrice: null,
-    promoId:   null,
-    desc:      'Massa ao molho à escolha. Ingrediente obrigatório selecionado antes de adicionar ao carrinho.',
-    image:     'https://images.unsplash.com/photo-1555949258-eb67b1ef0ceb?w=500',
-    available: true,
-    featured:  false,
+    promoId:    null,
+    desc:       'Massa ao molho à escolha. Ingrediente obrigatório selecionado antes de adicionar ao carrinho.',
+    image:      'https://images.unsplash.com/photo-1555949258-eb67b1ef0ceb?w=500',
+    available:  true,
+    featured:   false,
     complements: [
       {
         id:       'grp-molho',
         name:     'Molho',
-        type:     'single',      // radio — apenas uma opção
+        type:     'single',
         required: true,
         min:      1,
         max:      1,
         options: [
-          { id: 'ml-bolonhesa', name: 'Bolonhesa',  price: 0 },
-          { id: 'ml-alfredo',   name: 'Alfredo',    price: 0 },
-          { id: 'ml-pesto',     name: 'Pesto',      price: 2 },
+          { id: 'ml-bolonhesa', name: 'Bolonhesa', price: 0    },
+          { id: 'ml-alfredo',   name: 'Alfredo',   price: 0    },
+          { id: 'ml-pesto',     name: 'Pesto',     price: 2.00 },
         ],
       },
     ],
   },
 
-  // ── C. Múltiplo opcional ───────────────────────────────────────────────────
+  // C. Múltiplo opcional
   {
-    id:        1003,
-    name:      'Salada Montada',
-    category:  'pratos',
-    price:     18.00,
+    id:         1003,
+    name:       'Salada Montada',
+    category:   'pratos',
+    price:      18.00,
     promoPrice: null,
-    promoId:   null,
-    desc:      'Base de folhas com até 3 adicionais à escolha. Nenhum obrigatório.',
-    image:     'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=500',
-    available: true,
-    featured:  false,
+    promoId:    null,
+    desc:       'Base de folhas com até 3 adicionais à escolha. Nenhum obrigatório.',
+    image:      'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=500',
+    available:  true,
+    featured:   false,
     complements: [
       {
         id:       'grp-adicionais',
         name:     'Adicionais (até 3)',
-        type:     'multiple',    // checkbox — múltipla seleção
+        type:     'multiple',
         required: false,
         min:      0,
         max:      3,
         options: [
-          { id: 'ad-frango',   name: 'Frango grelhado', price: 5.00 },
-          { id: 'ad-atum',     name: 'Atum',            price: 4.00 },
-          { id: 'ad-queijo',   name: 'Queijo prato',    price: 3.00 },
-          { id: 'ad-tomate',   name: 'Tomate seco',     price: 2.00 },
-          { id: 'ad-crouton',  name: 'Crouton',         price: 1.50 },
+          { id: 'ad-frango',  name: 'Frango grelhado', price: 5.00 },
+          { id: 'ad-atum',    name: 'Atum',            price: 4.00 },
+          { id: 'ad-queijo',  name: 'Queijo prato',    price: 3.00 },
+          { id: 'ad-tomate',  name: 'Tomate seco',     price: 2.00 },
+          { id: 'ad-crouton', name: 'Crouton',         price: 1.50 },
         ],
       },
     ],
   },
 
-  // ── D. Múltiplos grupos (obrigatório + opcional) ───────────────────────────
+  // D. Múltiplos grupos
   {
-    id:        1004,
-    name:      'Frango Grelhado',
-    category:  'pratos',
-    price:     32.00,
+    id:         1004,
+    name:       'Frango Grelhado',
+    category:   'pratos',
+    price:      32.00,
     promoPrice: null,
-    promoId:   null,
-    desc:      'Frango grelhado com acompanhamento obrigatório e molho opcional.',
-    image:     'https://minhasreceitinhas.com.br/wp-content/uploads/2025/03/bife-de-frango-grelhado.jpeg',
-    available: true,
-    featured:  false,
+    promoId:    null,
+    desc:       'Frango grelhado com acompanhamento obrigatório e molho opcional.',
+    image:      'https://minhasreceitinhas.com.br/wp-content/uploads/2025/03/bife-de-frango-grelhado.jpeg',
+    available:  true,
+    featured:   false,
     complements: [
       {
         id:       'grp-acomp',
@@ -286,9 +327,9 @@ const ITEMS = [
         min:      1,
         max:      1,
         options: [
-          { id: 'ac-arroz',   name: 'Arroz e feijão', price: 0 },
-          { id: 'ac-pure',    name: 'Purê de batata', price: 0 },
-          { id: 'ac-legumes', name: 'Legumes ao vapor', price: 0 },
+          { id: 'ac-arroz',   name: 'Arroz e feijão',    price: 0 },
+          { id: 'ac-pure',    name: 'Purê de batata',    price: 0 },
+          { id: 'ac-legumes', name: 'Legumes ao vapor',  price: 0 },
         ],
       },
       {
@@ -299,9 +340,9 @@ const ITEMS = [
         min:      0,
         max:      1,
         options: [
-          { id: 'mo-ervas',  name: 'Ervas finas', price: 0    },
-          { id: 'mo-alho',   name: 'Alho e azeite', price: 0  },
-          { id: 'mo-chimichurri', name: 'Chimichurri', price: 2 },
+          { id: 'mo-ervas',       name: 'Ervas finas',    price: 0    },
+          { id: 'mo-alho',        name: 'Alho e azeite',  price: 0    },
+          { id: 'mo-chimichurri', name: 'Chimichurri',    price: 2.00 },
         ],
       },
       {
@@ -312,25 +353,25 @@ const ITEMS = [
         min:      0,
         max:      2,
         options: [
-          { id: 'ex-bacon',  name: 'Bacon', price: 4.00 },
-          { id: 'ex-queijo', name: 'Queijo derretido', price: 3.00 },
+          { id: 'ex-bacon',  name: 'Bacon',             price: 4.00 },
+          { id: 'ex-queijo', name: 'Queijo derretido',  price: 3.00 },
         ],
       },
     ],
   },
 
-  // ── E. Com promoPrice vinculada a promoção de item ─────────────────────────
+  // E. Com promoPrice vinculada
   {
-    id:        1005,
-    name:      'Suco Natural 500ml',
-    category:  'bebidas',
-    price:     12.00,
-    promoPrice: 9.00,     // 12 - 3 (promo-item value=3)
-    promoId:   'promo-item',
-    desc:      'Suco fresco com desconto de R$ 3,00 via "Oferta do Dia". Sabor obrigatório.',
-    image:     'https://images.unsplash.com/photo-1621506289937-a8e4df240d0b?w=500',
-    available: true,
-    featured:  true,      // destaque + promoção = card com badge de desconto
+    id:         1005,
+    name:       'Suco Natural 500ml',
+    category:   'bebidas',
+    price:      12.00,
+    promoPrice: 9.00,
+    promoId:    'promo-item',
+    desc:       'Suco fresco com desconto de R$ 3,00 via "Oferta do Dia". Sabor obrigatório.',
+    image:      'https://images.unsplash.com/photo-1621506289937-a8e4df240d0b?w=500',
+    available:  true,
+    featured:   true,
     complements: [
       {
         id:       'grp-sabor-suco',
@@ -340,26 +381,26 @@ const ITEMS = [
         min:      1,
         max:      1,
         options: [
-          { id: 'sj-laranja',   name: 'Laranja',  price: 0 },
-          { id: 'sj-maracuja',  name: 'Maracujá', price: 0 },
-          { id: 'sj-acerola',   name: 'Acerola',  price: 0 },
+          { id: 'sj-laranja',  name: 'Laranja',  price: 0 },
+          { id: 'sj-maracuja', name: 'Maracujá', price: 0 },
+          { id: 'sj-acerola',  name: 'Acerola',  price: 0 },
         ],
       },
     ],
   },
 
-  // ── Bebida simples (sem complemento) ──────────────────────────────────────
+  // Bebida simples
   {
-    id:        1006,
-    name:      'Água Mineral',
-    category:  'bebidas',
-    price:     3.00,
+    id:         1006,
+    name:       'Água Mineral',
+    category:   'bebidas',
+    price:      3.00,
     promoPrice: null,
-    promoId:   null,
-    desc:      'Garrafa 500ml gelada, sem ou com gás.',
-    image:     'https://images.unsplash.com/photo-1548839140-29a749e1cf4d?w=500',
-    available: true,
-    featured:  false,
+    promoId:    null,
+    desc:       'Garrafa 500ml gelada, sem ou com gás.',
+    image:      'https://images.unsplash.com/photo-1548839140-29a749e1cf4d?w=500',
+    available:  true,
+    featured:   false,
     complements: [
       {
         id:       'grp-gas',
@@ -376,18 +417,18 @@ const ITEMS = [
     ],
   },
 
-  // ── G. Destaque sem promoção ───────────────────────────────────────────────
+  // G. Destaque sem promoção
   {
-    id:        1007,
-    name:      'Bolo de Chocolate',
-    category:  'sobremesas',
-    price:     14.00,
+    id:         1007,
+    name:       'Bolo de Chocolate',
+    category:   'sobremesas',
+    price:      14.00,
     promoPrice: null,
-    promoId:   null,
-    desc:      'Fatia generosa de bolo de chocolate com calda quente. Produto em destaque.',
-    image:     'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=500',
-    available: true,
-    featured:  true,   // ⭐ destaque — aparece primeiro na listagem
+    promoId:    null,
+    desc:       'Fatia generosa de bolo de chocolate com calda quente. Produto em destaque.',
+    image:      'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=500',
+    available:  true,
+    featured:   true,
     complements: [
       {
         id:       'grp-acomp-bolo',
@@ -404,18 +445,18 @@ const ITEMS = [
     ],
   },
 
-  // ── I. Produto de combo ────────────────────────────────────────────────────
+  // I. Combo
   {
-    id:        1008,
-    name:      'Combo Individual',
-    category:  'combos',
-    price:     35.00,
+    id:         1008,
+    name:       'Combo Individual',
+    category:   'combos',
+    price:      35.00,
     promoPrice: null,
-    promoId:   null,
-    desc:      'Um prato + uma bebida + uma sobremesa. Escolha um de cada.',
-    image:     'https://images.unsplash.com/photo-1561043433-aaf687c4cf04?w=500',
-    available: true,
-    featured:  false,
+    promoId:    null,
+    desc:       'Um prato + uma bebida + uma sobremesa. Escolha um de cada.',
+    image:      'https://images.unsplash.com/photo-1561043433-aaf687c4cf04?w=500',
+    available:  true,
+    featured:   false,
     complements: [
       {
         id:       'grp-combo-prato',
@@ -438,8 +479,8 @@ const ITEMS = [
         min:      1,
         max:      1,
         options: [
-          { id: 'cb-suco', name: 'Suco Natural',  price: 0 },
-          { id: 'cb-agua', name: 'Água Mineral',  price: 0 },
+          { id: 'cb-suco', name: 'Suco Natural', price: 0 },
+          { id: 'cb-agua', name: 'Água Mineral', price: 0 },
         ],
       },
       {
@@ -456,42 +497,42 @@ const ITEMS = [
     ],
   },
 
-  // ── F. Produto indisponível ────────────────────────────────────────────────
+  // F. Indisponível
   {
-    id:        1009,
-    name:      'Prato Especial (indisponível)',
-    category:  'pratos',
-    price:     45.00,
-    promoPrice: null,
-    promoId:   null,
-    desc:      'Este produto está temporariamente indisponível. Exibido com visual de esgotado no cardápio.',
-    image:     'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500',
-    available: false,  // ← aparece cinza, sem botão de adicionar
-    featured:  false,
+    id:          1009,
+    name:        'Prato Especial (indisponível)',
+    category:    'pratos',
+    price:       45.00,
+    promoPrice:  null,
+    promoId:     null,
+    desc:        'Este produto está temporariamente indisponível. Exibido com visual de esgotado no cardápio.',
+    image:       'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500',
+    available:   false,
+    featured:    false,
     complements: [],
   },
 
-  // ── H. Produto em categoria desativada ────────────────────────────────────
+  // H. Categoria desativada
   {
-    id:        1010,
-    name:      'Item Temporário',
-    category:  'temporarios',  // categoria active: false
-    price:     10.00,
-    promoPrice: null,
-    promoId:   null,
-    desc:      'Este item pertence à categoria "Temporários" que está desativada — não aparece no cardápio público.',
-    image:     'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500',
-    available: true,
-    featured:  false,
+    id:          1010,
+    name:        'Item Temporário',
+    category:    'temporarios',
+    price:       10.00,
+    promoPrice:  null,
+    promoId:     null,
+    desc:        'Pertence à categoria "Temporários" que está desativada — não aparece no cardápio público.',
+    image:       'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500',
+    available:   true,
+    featured:    false,
     complements: [],
   },
 ];
 
 // ── Usuários de demonstração ───────────────────────────────────────────────
 const USERS = [
-  { email: 'admin@demo.com',  password: 'admin123',  displayName: 'Admin Demo',      role: 'admin'  },
-  { email: 'worker@demo.com', password: 'worker123', displayName: 'Atendente Demo',  role: 'worker' },
-  { email: 'cliente@demo.com',password: 'cliente123',displayName: 'Cliente Demo',    role: 'client' },
+  { email: 'admin@demo.com',   password: 'admin123',   displayName: 'Admin Demo',     role: 'admin'  },
+  { email: 'worker@demo.com',  password: 'worker123',  displayName: 'Atendente Demo', role: 'worker' },
+  { email: 'cliente@demo.com', password: 'cliente123', displayName: 'Cliente Demo',   role: 'client' },
 ];
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -502,7 +543,7 @@ async function seed() {
   console.log('\n🌱  Cardápio Digital Pro — Seed de Demonstração');
   console.log('═'.repeat(52));
 
-  // 1. Limpa coleções existentes
+  // 1. Limpa coleções
   log('🗑️ ', 'Limpando coleções...');
   await Promise.all([
     clearCollection('config'),
@@ -518,14 +559,20 @@ async function seed() {
   log('🏪', 'Gravando config da loja...');
   await db.collection('config').doc('main').set(CONFIG);
   await db.collection('meta').doc('orderCounter').set({ counter: 0 }, { merge: true });
-  log('✅', `Loja: "${CONFIG.restaurantName}"\n`);
+  log('✅', `Loja: "${CONFIG.restaurantName}" — ${CONFIG.storeCidade}/${CONFIG.storeUf}`);
+  log('📍', `  Coords: ${CONFIG.storeLat}, ${CONFIG.storeLng}`);
+  log('🛵', `  ${DELIVERY_ZONES.length} zona(s) de entrega:`);
+  DELIVERY_ZONES.forEach(z => {
+    log('  ↳', `${z.label.padEnd(22)} até ${String(z.maxKm).padStart(3)} km — R$ ${z.fee.toFixed(2).padStart(5)} — ${z.deliveryTime || '(sem tempo)'}`);
+  });
+  log('🚫', `  Fora de área: ${CONFIG.deliveryFeeOutOfRange == null ? 'bloqueia pedido' : 'R$ ' + CONFIG.deliveryFeeOutOfRange.toFixed(2)}`);
+  log('⏱️ ', `  Tempo padrão (fallback): ${CONFIG.deliveryTime}\n`);
 
   // 3. Categorias
   log('🏷️ ', 'Gravando categorias...');
   for (const cat of CATEGORIES) {
     await db.collection('categories').doc(cat.id).set(cat);
-    const status = cat.active ? '✅' : '🔕';
-    log(status, `  ${cat.icon} ${cat.name}`);
+    log(cat.active ? '✅' : '🔕', `  ${cat.icon} ${cat.name}`);
   }
   console.log();
 
@@ -533,7 +580,6 @@ async function seed() {
   log('🔥', 'Gravando promoções...');
   for (const promo of PROMOS) {
     await db.collection('promotions').doc(String(promo.id)).set(promo);
-    const status = promo.active ? '✅' : '🔕';
     const detail = promo.type === 'coupon'
       ? `[CUPOM: ${promo.code}]`
       : promo.type === 'freeDelivery'
@@ -541,7 +587,7 @@ async function seed() {
       : promo.scope === 'item'
       ? '[ITEM]'
       : '[CARRINHO]';
-    log(status, `  ${promo.name} ${detail}`);
+    log(promo.active ? '✅' : '🔕', `  ${promo.name} ${detail}`);
   }
   console.log();
 
@@ -550,10 +596,12 @@ async function seed() {
   for (const item of ITEMS) {
     await db.collection('items').doc(String(item.id)).set(item);
     const flags = [
-      item.featured   ? '⭐'  : '',
-      !item.available ? '🔕'  : '',
-      item.promoId    ? '🏷️'  : '',
-      item.complements.length === 0 ? '' : `(${item.complements.length} grupo(s))`,
+      item.featured        ? '⭐'  : '',
+      !item.available      ? '🔕'  : '',
+      item.promoId         ? '🏷️'  : '',
+      item.complements.length > 0
+        ? `(${item.complements.length} grupo(s))`
+        : '',
     ].filter(Boolean).join(' ');
     log('✅', `  [${item.category}] ${item.name} — R$ ${item.price.toFixed(2)} ${flags}`);
   }
@@ -577,6 +625,10 @@ async function seed() {
   console.log('\n  Cupons de teste:');
   PROMOS.filter(p => p.type === 'coupon').forEach(p => {
     console.log(`    🎟️   ${p.code}  — ${p.name}`);
+  });
+  console.log('\n  Zonas de entrega:');
+  DELIVERY_ZONES.forEach(z => {
+    console.log(`    🛵  ${z.label} — até ${z.maxKm} km — R$ ${z.fee.toFixed(2)} — ${z.deliveryTime || config.deliveryTime}`);
   });
   console.log('\n  Emulator UI: http://localhost:4000\n');
 
