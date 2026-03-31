@@ -1,0 +1,1108 @@
+<!-- ── MODAL: PRODUTO ── -->
+<div x-show="showProductModal && selectedProduct" x-transition:enter="transition ease-out duration-300"
+    x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+    x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100"
+    x-transition:leave-end="opacity-0" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="showProductModal=false"></div>
+
+    <div x-show="showProductModal && selectedProduct" x-transition:enter="transition ease-out duration-300"
+        x-transition:enter-start="translate-y-full sm:translate-y-0 sm:scale-95 opacity-0"
+        x-transition:enter-end="translate-y-0 sm:scale-100 opacity-100"
+        x-transition:leave="transition ease-in duration-200"
+        x-transition:leave-start="translate-y-0 sm:scale-100 opacity-100"
+        x-transition:leave-end="translate-y-full sm:translate-y-0 sm:scale-95 opacity-0"
+        class="relative bg-surface-card w-full max-w-lg rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl max-h-[92vh] flex flex-col">
+
+        <template x-if="selectedProduct">
+            <div class="flex flex-col overflow-hidden">
+
+                <!-- Hero -->
+                <div class="relative h-56 flex-shrink-0">
+                    <img :src="selectedProduct.image" :alt="selectedProduct.name" class="w-full h-full object-cover">
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"></div>
+                    <button @click="showProductModal=false"
+                        class="absolute top-4 right-4 bg-black/50 backdrop-blur-sm text-white rounded-full w-9 h-9 flex items-center justify-center hover:bg-black/70 transition-colors shadow-lg">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                                d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                    <template x-if="cardPct(selectedProduct) > 0">
+                        <div class="absolute top-4 left-4 flex items-center rounded-2xl px-3 py-1.5 shadow-lg font-display font-black text-white"
+                            style="background:var(--accent)">
+                            <span x-text="'−' + cardPct(selectedProduct) + '%'"></span>
+                        </div>
+                    </template>
+                    <template x-if="cardPct(selectedProduct) === 0 && cardAllPromos(selectedProduct).length > 0">
+                        <div
+                            class="absolute top-4 left-4 bg-orange-500/90 backdrop-blur-sm text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-md">
+                            🔥 PROMOÇÃO</div>
+                    </template>
+                    <template x-if="!selectedProduct.available">
+                        <div class="absolute inset-0 bg-black/50 flex items-center justify-center">
+                            <span class="bg-black/70 text-white text-sm font-bold px-4 py-2 rounded-xl">Indisponível no
+                                momento</span>
+                        </div>
+                    </template>
+                    <div class="absolute bottom-4 left-4 right-14">
+                        <p class="text-xs font-semibold text-white/60 uppercase tracking-wider mb-1"
+                            x-text="getCategoryName(selectedProduct.category)"></p>
+                        <h2 class="text-xl font-display font-bold text-white leading-tight"
+                            x-text="selectedProduct.name"></h2>
+                    </div>
+                </div>
+
+                <!-- Conteúdo scrollável -->
+                <div class="p-5 overflow-y-auto flex-1 space-y-5">
+                    <p class="text-sm text-text-muted leading-relaxed" x-text="selectedProduct.desc"></p>
+
+                    <!-- Promoções disponíveis -->
+                    <template x-if="cardAllPromos(selectedProduct).length > 0">
+                        <div class="rounded-2xl border border-border overflow-hidden"
+                            style="background:linear-gradient(135deg,rgba(var(--accent-rgb),.04) 0%,transparent 100%)">
+                            <div class="flex items-center gap-2 px-4 py-2.5 border-b border-border/60">
+                                <span class="text-xs font-bold text-text-muted uppercase tracking-wider">Promoções
+                                    disponíveis</span>
+                            </div>
+                            <div class="px-4 py-3 flex flex-wrap gap-2" x-html="cardAllPromosHTML(selectedProduct)">
+                            </div>
+                            <template x-if="cardHasSavings(selectedProduct)">
+                                <div class="px-4 pb-3">
+                                    <p class="text-xs font-semibold rounded-xl px-3 py-2 inline-block"
+                                        style="background:rgba(34,197,94,.1);color:#16a34a"
+                                        x-text="cardSavingsLabel(selectedProduct)">
+                                    </p>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+
+                    <!-- Preço + quantidade -->
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="flex flex-col">
+                            <template x-if="selectedProduct.promoPrice != null">
+                                <div class="flex flex-col">
+                                    <span class="text-xs text-text-muted line-through leading-none"
+                                        x-text="formatMoney(selectedProduct.price)"></span>
+                                    <span class="text-3xl font-display font-black leading-tight"
+                                        style="color:var(--accent)"
+                                        x-text="formatMoney(selectedProduct.promoPrice)"></span>
+                                    <span class="text-xs font-semibold mt-0.5" style="color:#16a34a"
+                                        x-show="cardPct(selectedProduct) > 0">
+                                        <span x-text="cardPct(selectedProduct)"></span>% de desconto
+                                    </span>
+                                </div>
+                            </template>
+                            <template x-if="selectedProduct.promoPrice == null">
+                                <span class="text-3xl font-display font-black leading-tight" style="color:var(--accent)"
+                                    x-text="formatMoney(selectedProduct.price)"></span>
+                            </template>
+                        </div>
+                        <div class="flex items-center gap-2 bg-surface-muted rounded-2xl p-1.5 flex-shrink-0">
+                            <button @click="if(modalQty > 1) modalQty--"
+                                class="w-9 h-9 rounded-xl bg-surface-card flex items-center justify-center font-bold text-lg text-text-primary shadow-sm hover:shadow-md active:scale-95 transition-all">−</button>
+                            <span x-text="modalQty"
+                                class="font-display font-black text-text-primary w-7 text-center text-lg"></span>
+                            <button @click="modalQty++"
+                                class="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-sm hover:shadow-md active:scale-95 transition-all"
+                                :style="'background:var(--accent)'">+</button>
+                        </div>
+                    </div>
+
+                    <!-- Complementos -->
+                    <template x-if="selectedProduct.complements && selectedProduct.complements.length > 0">
+                        <div class="space-y-3">
+                            <template x-for="group in selectedProduct.complements" :key="group.id">
+                                <div class="complement-group rounded-2xl border border-border overflow-hidden">
+                                    <div
+                                        class="flex items-center justify-between px-4 py-3 bg-surface-muted border-b border-border">
+                                        <div>
+                                            <div class="flex items-center gap-2">
+                                                <h4 class="font-display font-bold text-text-primary text-sm"
+                                                    x-text="group.name"></h4>
+                                                <span x-show="group.required"
+                                                    class="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide"
+                                                    style="background:rgba(var(--accent-rgb),.12);color:var(--accent)">Obrigatório</span>
+                                            </div>
+                                            <p class="text-xs text-text-muted mt-0.5">
+                                                <span x-show="group.type === 'single'">Escolha 1 opção</span>
+                                                <span x-show="group.type === 'multiple'">Até <span
+                                                        x-text="group.max"></span>
+                                                    opção(ões)</span>
+                                            </p>
+                                        </div>
+                                        <span class="text-xs font-black rounded-full px-2.5 py-1 transition-all"
+                                            :class="(modalSelectedComplements[group.id]||[]).length > 0 ? 'text-white' : 'bg-surface-card text-text-muted'"
+                                            :style="(modalSelectedComplements[group.id]||[]).length > 0 ? 'background:var(--accent)' : ''">
+                                            <span x-text="(modalSelectedComplements[group.id]||[]).length"></span>/<span
+                                                x-text="group.type === 'single' ? 1 : group.max"></span>
+                                        </span>
+                                    </div>
+                                    <div class="divide-y divide-border">
+                                        <template x-for="option in group.options" :key="option.id">
+                                            <button @click="toggleComplement(group, option)"
+                                                class="complement-option w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-muted transition-colors text-left"
+                                                :class="isComplementSelected(group.id, option.id) ? 'bg-accent/5' : ''">
+                                                <div class="w-5 h-5 flex items-center justify-center flex-shrink-0 transition-all border-2"
+                                                    :class="isComplementSelected(group.id, option.id) ? 'border-transparent' : 'border-border bg-surface-card'"
+                                                    :style="[isComplementSelected(group.id, option.id) ? 'background:var(--accent)' : '', group.type === 'single' ? 'border-radius:50%' : 'border-radius:5px'].filter(Boolean).join(';')">
+                                                    <svg x-show="isComplementSelected(group.id, option.id)"
+                                                        class="w-3 h-3 text-white" fill="none" stroke="currentColor"
+                                                        viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                                            stroke-width="3" d="M5 13l4 4L19 7" />
+                                                    </svg>
+                                                </div>
+                                                <span class="flex-1 text-sm text-text-primary font-medium"
+                                                    x-text="option.name"></span>
+                                                <span class="text-sm font-bold flex-shrink-0">
+                                                    <span x-show="option.price > 0" style="color:var(--accent)">+<span
+                                                            x-text="formatMoney(option.price)"></span></span>
+                                                    <span x-show="option.price === 0"
+                                                        class="text-xs text-text-muted font-medium bg-surface-muted px-2 py-0.5 rounded-full">Grátis</span>
+                                                </span>
+                                            </button>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+
+                    <!-- Observações -->
+                    <div>
+                        <label class="block text-xs font-bold text-text-muted uppercase tracking-wider mb-2">
+                            Observações <span class="normal-case font-normal">(opcional)</span>
+                        </label>
+                        <textarea x-model="modalNote" placeholder="Ex: sem cebola, ponto bem passado, tirar o molho…"
+                            rows="2"
+                            class="w-full text-sm bg-surface-muted text-text-primary placeholder-text-muted rounded-xl p-3 outline-none focus:ring-2 ring-accent resize-none transition-all border border-transparent focus:border-accent/30"></textarea>
+                    </div>
+
+                    <!-- Total de adicionais -->
+                    <template x-if="modalComplementsTotal > 0">
+                        <div class="complement-summary rounded-xl p-3.5 flex items-center justify-between text-sm border"
+                            style="background:rgba(var(--accent-rgb),.06);border-color:rgba(var(--accent-rgb),.2)">
+                            <div class="flex items-center gap-2"><span class="text-lg">🧩</span><span
+                                    class="text-text-muted font-medium">Adicionais selecionados</span></div>
+                            <span class="font-black text-base" style="color:var(--accent)">+<span
+                                    x-text="formatMoney(modalComplementsTotal)"></span></span>
+                        </div>
+                    </template>
+
+                    <!-- Preview do total -->
+                    <template x-if="modalQty > 1 || modalComplementsTotal > 0">
+                        <div class="flex items-center justify-between text-xs text-text-muted px-1">
+                            <span><span x-text="modalQty"></span>x × <span
+                                    x-text="formatMoney((selectedProduct.promoPrice ?? selectedProduct.price) + modalComplementsTotal)"></span></span>
+                            <span class="font-bold text-sm text-text-primary">Total: <span style="color:var(--accent)"
+                                    x-text="formatMoney(((selectedProduct.promoPrice ?? selectedProduct.price) + modalComplementsTotal) * modalQty)"></span></span>
+                        </div>
+                    </template>
+
+                    <!-- CTA -->
+                    <button @click="confirmAddToCart()" :disabled="!selectedProduct.available"
+                        class="w-full py-4 rounded-2xl text-white font-display font-black text-base shadow-lg transition-all active:scale-[0.98] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                        :style="'background:var(--accent)'">
+                        <span x-show="selectedProduct.available" class="flex items-center justify-center gap-3">
+                            <span class="text-white/80">🛒</span>
+                            <span>Adicionar ao pedido · <span
+                                    x-text="formatMoney(((selectedProduct.promoPrice ?? selectedProduct.price) + modalComplementsTotal) * modalQty)"></span></span>
+                        </span>
+                        <span x-show="!selectedProduct.available"
+                            class="flex items-center justify-center gap-2"><span>🚫</span><span>Item
+                                Indisponível</span></span>
+                    </button>
+                </div>
+
+            </div>
+        </template>
+    </div>
+</div>
+
+
+<!-- ── MODAL: LOGIN ADMIN ── -->
+<div x-show="showAdminLogin && !isCloudAuthenticated" x-transition:enter="transition ease-out duration-200"
+    x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+    class="fixed inset-0 z-[100] flex items-center justify-center px-4" style="display:none">
+
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        @click="showAdminLogin=false; cloudLoginStep='email'; cloudLoginError=''"></div>
+
+    <div class="relative bg-surface-card rounded-3xl shadow-2xl p-6 w-full max-w-sm"
+        x-transition:enter="transition ease-out duration-200" x-transition:enter-start="scale-95 opacity-0"
+        x-transition:enter-end="scale-100 opacity-100">
+
+        <div x-show="cloudLoginStep === 'email'">
+            <h3 class="font-display font-bold text-text-primary text-xl mb-1">🔒 Área Admin</h3>
+            <p class="text-sm text-text-muted mb-5">Digite seu email para receber o código de acesso</p>
+            <input type="email" x-model="cloudLoginEmail" placeholder="seu@email.com" @keyup.enter="cloudSendOtp()"
+                class="form-input w-full mb-3" :disabled="cloudSyncing">
+            <p x-show="cloudLoginError" class="text-red-500 text-xs mb-3" x-text="cloudLoginError"></p>
+            <button @click="cloudSendOtp()" :disabled="cloudSyncing"
+                class="w-full py-3 rounded-2xl font-bold text-white transition-all disabled:opacity-50"
+                :style="'background:var(--accent)'">
+                <span x-show="!cloudSyncing">Enviar código</span>
+                <span x-show="cloudSyncing" style="display:none">Enviando...</span>
+            </button>
+        </div>
+
+        <div x-show="cloudLoginStep === 'otp'" style="display:none">
+            <div class="text-center py-4 space-y-3">
+                <div class="text-4xl">📧</div>
+                <p class="font-bold text-text-primary text-sm">Link enviado!</p>
+                <p class="text-xs text-text-muted leading-relaxed">Verifique sua caixa de entrada em <strong
+                        x-text="cloudLoginEmail"></strong> e clique no link para entrar.</p>
+                <p class="text-[11px] text-text-muted">O link expira em 1 hora. Verifique também o spam.</p>
+            </div>
+            <button @click="cloudLoginStep = 'email'; cloudOtpSent = false"
+                class="w-full text-xs text-text-muted hover:text-text-primary py-2">← Usar outro e-mail</button>
+        </div>
+    </div>
+</div>
+
+
+<!-- ── MODAL: FORMULÁRIO DE PRODUTO (admin) ── -->
+<div x-show="showProductForm" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0"
+    x-transition:enter-end="opacity-100" class="fixed inset-0 z-[60] flex items-end sm:items-center justify-center">
+
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="showProductForm=false"></div>
+
+    <div class="relative bg-surface-card w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl p-6"
+        style="max-height:92dvh;overflow-y:auto;-webkit-overflow-scrolling:touch"
+        x-transition:enter="transition ease-out duration-200"
+        x-transition:enter-start="translate-y-full sm:scale-95 opacity-0"
+        x-transition:enter-end="translate-y-0 sm:scale-100 opacity-100">
+
+        <template x-if="editingProduct">
+            <div>
+                <h3 class="font-display font-bold text-text-primary text-lg mb-5"
+                    x-text="editingProduct.id ? '✏️ Editar Produto' : '➕ Novo Produto'"></h3>
+
+                <div class="space-y-4">
+
+                    <div>
+                        <label class="form-label">Nome do produto *</label>
+                        <input type="text" x-model="editingProduct.name" class="form-input w-full">
+                    </div>
+
+                    <div>
+                        <label class="form-label">Descrição</label>
+                        <textarea x-model="editingProduct.desc" rows="2"
+                            class="form-input w-full resize-none"></textarea>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="form-label">Preço R$ *</label>
+                            <input type="number" step="0.01" x-model.number="editingProduct.price"
+                                class="form-input w-full">
+                        </div>
+                        <div>
+                            <label class="form-label">Preço Promo R$</label>
+                            <input type="number" step="0.01" x-model.number="editingProduct.promoPrice"
+                                placeholder="Opcional" class="form-input w-full">
+                        </div>
+                    </div>
+
+                    <!-- Promoção vinculada -->
+                    <div class="border-t border-border pt-3 mt-1">
+                        <h3 class="text-xs font-bold text-text-muted uppercase tracking-wider mb-2.5">🔥 Promoção
+                            Vinculada ao
+                            Produto</h3>
+                        <div x-show="itemScopePromos.length === 0"
+                            class="rounded-xl p-3 text-xs text-text-muted text-center"
+                            style="background:var(--surface-muted);border:1px dashed var(--border)">
+                            Nenhuma promoção de item cadastrada.<br>Crie uma em <strong>Promoções → Escopo:
+                                Item</strong> para
+                            vincular aqui.
+                        </div>
+                        <div x-show="itemScopePromos.length > 0" class="space-y-2">
+                            <select x-model.number="editingProduct.promoId" @change="onEditingPromoChange()"
+                                class="form-input w-full">
+                                <option :value="null">— Sem promoção —</option>
+                                <template x-for="promo in itemScopePromos" :key="promo.id">
+                                    <option :value="promo.id"
+                                        x-text="promo.name + ' · ' + (promo.type === 'percentage' ? promo.value + '% off' : promo.type === 'fixed' ? '− R$ ' + promo.value.toFixed(2) : promo.name)">
+                                    </option>
+                                </template>
+                            </select>
+                            <div x-show="editingProduct.promoId && editingProduct.price > 0"
+                                class="rounded-xl p-3 flex items-center justify-between gap-3"
+                                style="background:var(--accent-light,#fef3c7);border:1px solid rgba(245,158,11,0.3)">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-base select-none">🏷️</span>
+                                    <div>
+                                        <p class="text-xs font-bold" style="color:var(--accent)">Preço com desconto</p>
+                                        <p class="text-[10px] text-text-muted">calculado automaticamente ao salvar</p>
+                                    </div>
+                                </div>
+                                <div class="text-right flex-shrink-0">
+                                    <p class="text-xs text-text-muted line-through"
+                                        x-text="formatMoney(editingProduct.price)"></p>
+                                    <p class="text-base font-display font-bold" style="color:var(--accent)"
+                                        x-text="editingProductPromoPreview != null ? formatMoney(editingProductPromoPreview) : '—'">
+                                    </p>
+                                </div>
+                            </div>
+                            <div x-show="editingProduct.promoId && editingProduct.promoPrice != null && editingProductPromoPreview != null && Math.abs((editingProduct.promoPrice || 0) - editingProductPromoPreview) > 0.01"
+                                class="rounded-xl p-3 text-xs flex items-start gap-2"
+                                style="background:#fef9c3;border:1px solid #fde047;color:#854d0e">
+                                <span class="flex-shrink-0 text-base">⚠️</span>
+                                <span>O preço foi alterado. Ao salvar, o preço promocional será recalculado.</span>
+                            </div>
+                            <button type="button" x-show="editingProduct.promoId"
+                                @click="editingProduct.promoId = null; editingProduct.promoPrice = null"
+                                class="text-[11px] font-semibold text-red-400 hover:text-red-600 flex items-center gap-1 py-1 px-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                                Remover promoção deste produto
+                            </button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="form-label">Categoria</label>
+                        <select x-model="editingProduct.category" class="form-input w-full">
+                            <template x-for="cat in categories" :key="cat.id">
+                                <option :value="cat.id" x-text="(cat.icon||'📦')+' '+cat.name"></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    <!-- Imagem -->
+                    <div>
+                        <label class="form-label">Imagem</label>
+                        <div x-show="editingProduct.image" class="relative rounded-xl overflow-hidden h-32 mb-2 group">
+                            <img :src="editingProduct.image" class="w-full h-full object-cover"
+                                @error="editingProduct.image=''">
+                            <button type="button" @click="editingProduct.image = ''"
+                                class="absolute top-2 right-2 w-7 h-7 rounded-lg bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs">✕</button>
+                        </div>
+                        <label class="flex items-center gap-2 cursor-pointer w-full mb-2">
+                            <div class="flex-1 flex items-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-border hover:border-accent/50 transition-colors text-sm text-text-muted hover:text-accent"
+                                style="background:var(--surface-muted)">
+                                <span x-show="!_imageUploading">📁</span>
+                                <span x-show="_imageUploading" class="animate-spin text-accent">⏳</span>
+                                <span x-show="!_imageUploading"
+                                    x-text="editingProduct.image ? 'Trocar arquivo...' : 'Enviar do dispositivo...'"></span>
+                                <span x-show="_imageUploading" class="text-accent font-medium"
+                                    x-text="'Enviando... ' + _imageUploadProgress + '%'"></span>
+                            </div>
+                            <input type="file" accept="image/*" class="hidden" :disabled="_imageUploading"
+                                @change="uploadItemImage($event)">
+                        </label>
+                        <div class="flex items-center gap-2 text-[10px] text-text-muted mb-1.5">
+                            <div class="flex-1 h-px" style="background:var(--border)"></div>
+                            <span>ou cole uma URL</span>
+                            <div class="flex-1 h-px" style="background:var(--border)"></div>
+                        </div>
+                        <input type="url" x-model="editingProduct.image" placeholder="https://exemplo.com/foto.jpg"
+                            class="form-input w-full text-sm">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="flex items-center justify-between bg-surface-muted rounded-xl p-3">
+                            <span class="text-sm font-medium text-text-primary">Disponível</span>
+                            <button @click="editingProduct.available=!editingProduct.available"
+                                class="relative w-10 h-5 rounded-full transition-colors"
+                                :style="editingProduct.available?'background:var(--accent)':'background:#d1d5db'">
+                                <div class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                    :class="editingProduct.available?'translate-x-5':'translate-x-0.5'"></div>
+                            </button>
+                        </div>
+                        <div class="flex items-center justify-between bg-surface-muted rounded-xl p-3">
+                            <span class="text-sm font-medium text-text-primary">Destaque</span>
+                            <button @click="editingProduct.featured=!editingProduct.featured"
+                                class="relative w-10 h-5 rounded-full transition-colors"
+                                :style="editingProduct.featured?'background:var(--accent)':'background:#d1d5db'">
+                                <div class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                    :class="editingProduct.featured?'translate-x-5':'translate-x-0.5'"></div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Complementos e adicionais -->
+                    <div class="border-t border-dashed border-border pt-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <div>
+                                <h4 class="font-display font-bold text-text-primary text-sm">🧩 Complementos &
+                                    Adicionais</h4>
+                                <p class="text-xs text-text-muted">Crie grupos de opções (Ponto da carne, Adicionais,
+                                    etc.)</p>
+                            </div>
+                            <span class="text-xs bg-accent/10 text-accent px-2 py-0.5 rounded-full font-bold"
+                                x-text="(editingProduct.complements||[]).length + ' grupo(s)'"></span>
+                        </div>
+
+                        <!-- Grupos existentes -->
+                        <div class="space-y-3 mb-4">
+                            <template x-for="(group, gIdx) in (editingProduct.complements||[])" :key="group.id">
+                                <div class="rounded-xl border border-border overflow-hidden" x-data="{
+                    newOptName:'', newOptPrice:0,
+                    editingOptIdx:null, editOptName:'', editOptPrice:0,
+                    editingGroup:false,
+                    editGrpName:'', editGrpType:'multiple', editGrpMax:3, editGrpRequired:false,
+                    openGroupEdit() { this.editGrpName=group.name; this.editGrpType=group.type; this.editGrpMax=group.max; this.editGrpRequired=group.required; this.editingGroup=true; },
+                    confirmGroupEdit() {
+                      if(!this.editGrpName.trim()) return;
+                      group.name=this.editGrpName.trim(); group.type=this.editGrpType; group.max=this.editGrpMax; group.required=this.editGrpRequired;
+                      editingProduct={...editingProduct,complements:editingProduct.complements.map(g=>({...g,options:[...g.options]}))};
+                      this.editingGroup=false;
+                    }
+                  }">
+
+                                    <!-- Cabeçalho: visualização -->
+                                    <div x-show="!editingGroup"
+                                        class="flex items-center justify-between px-3 py-2 bg-surface-muted border-b border-border">
+                                        <div class="flex items-center gap-2 flex-wrap min-w-0">
+                                            <span class="text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0"
+                                                :class="group.type==='single' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'"
+                                                x-text="group.type==='single' ? '◉ Radio' : '☑ Multi'"></span>
+                                            <span class="font-bold text-text-primary text-sm truncate"
+                                                x-text="group.name"></span>
+                                            <span x-show="group.required"
+                                                class="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded dark:bg-red-900/30 flex-shrink-0">obrig.</span>
+                                            <span class="text-[10px] text-text-muted flex-shrink-0">max: <span
+                                                    x-text="group.max || '∞'"></span></span>
+                                        </div>
+                                        <div class="flex items-center gap-1 flex-shrink-0 ml-2">
+                                            <button @click="openGroupEdit()"
+                                                class="text-text-muted hover:text-accent text-xs px-2 py-1 rounded-lg hover:bg-accent/10 transition-colors">✏️</button>
+                                            <button @click="removeComplementGroup(gIdx)"
+                                                class="text-red-400 hover:text-red-600 text-xs px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">✕</button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Cabeçalho: edição do grupo -->
+                                    <div x-show="editingGroup" class="px-3 py-3 border-b border-border space-y-2"
+                                        style="background:rgba(var(--accent-rgb),.05)">
+                                        <p class="text-[10px] font-bold text-accent uppercase tracking-wider">Editar
+                                            grupo</p>
+                                        <input type="text" x-model="editGrpName" placeholder="Nome do grupo"
+                                            class="form-input w-full text-xs py-1.5" @keyup.escape="editingGroup=false"
+                                            @keyup.enter="confirmGroupEdit()">
+                                        <div class="grid grid-cols-2 gap-2">
+                                            <select x-model="editGrpType" class="form-input text-xs py-1.5">
+                                                <option value="single">◉ Escolha única</option>
+                                                <option value="multiple">☑ Múltipla escolha</option>
+                                            </select>
+                                            <input type="number" x-model.number="editGrpMax" placeholder="Máx." min="1"
+                                                class="form-input text-xs py-1.5">
+                                        </div>
+                                        <label class="flex items-center gap-2 text-xs text-text-primary cursor-pointer">
+                                            <input type="checkbox" x-model="editGrpRequired" class="rounded">
+                                            Obrigatório
+                                        </label>
+                                        <div class="flex gap-2 pt-1">
+                                            <button @click="confirmGroupEdit()"
+                                                class="flex-1 py-2 rounded-xl text-white text-xs font-bold transition-all active:scale-95"
+                                                :style="'background:var(--accent)'">✓ Confirmar</button>
+                                            <button @click="editingGroup=false"
+                                                class="flex-1 py-2 rounded-xl text-xs font-semibold border border-border text-text-muted transition-all active:scale-95"
+                                                style="background:var(--surface-card)">Cancelar</button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Opções -->
+                                    <div class="p-2 space-y-1">
+                                        <template x-for="(opt, oIdx) in (group.options||[])" :key="opt.id || oIdx">
+                                            <div>
+                                                <div x-show="editingOptIdx !== oIdx"
+                                                    class="flex items-center gap-2 bg-surface-muted rounded-lg px-3 py-2">
+                                                    <span class="flex-1 text-sm text-text-primary"
+                                                        x-text="opt.name"></span>
+                                                    <span class="text-xs font-bold flex-shrink-0"
+                                                        :class="opt.price>0?'text-accent':'text-text-muted'"
+                                                        x-text="opt.price>0?'+'+formatMoney(opt.price):'grátis'"></span>
+                                                    <button
+                                                        @click="editingOptIdx=oIdx; editOptName=opt.name; editOptPrice=opt.price"
+                                                        class="text-text-muted hover:text-accent w-6 h-6 rounded flex items-center justify-center text-xs transition-colors flex-shrink-0">✏️</button>
+                                                    <button @click="removeComplementOption(gIdx, oIdx)"
+                                                        class="text-red-400 hover:text-red-600 w-6 h-6 rounded flex items-center justify-center text-xs transition-colors flex-shrink-0">✕</button>
+                                                </div>
+                                                <div x-show="editingOptIdx === oIdx"
+                                                    class="flex gap-2 p-2 rounded-lg border border-accent/30"
+                                                    style="background:rgba(var(--accent-rgb),.05)">
+                                                    <input type="text" x-model="editOptName"
+                                                        class="form-input flex-1 text-xs py-1.5"
+                                                        @keyup.escape="editingOptIdx=null"
+                                                        @keyup.enter="opt.name=editOptName.trim()||opt.name;opt.price=parseFloat(editOptPrice)||0;editingProduct={...editingProduct,complements:editingProduct.complements.map(g=>({...g,options:[...g.options]}))};editingOptIdx=null">
+                                                    <input type="number" x-model.number="editOptPrice" step="0.50"
+                                                        min="0" class="form-input w-20 text-xs py-1.5"
+                                                        @keyup.enter="opt.name=editOptName.trim()||opt.name;opt.price=parseFloat(editOptPrice)||0;editingProduct={...editingProduct,complements:editingProduct.complements.map(g=>({...g,options:[...g.options]}))};editingOptIdx=null">
+                                                    <button
+                                                        @click="opt.name=editOptName.trim()||opt.name;opt.price=parseFloat(editOptPrice)||0;editingProduct={...editingProduct,complements:editingProduct.complements.map(g=>({...g,options:[...g.options]}))};editingOptIdx=null"
+                                                        class="px-2.5 py-1.5 rounded-lg text-white text-xs font-bold flex-shrink-0"
+                                                        :style="'background:var(--accent)'">✓</button>
+                                                    <button @click="editingOptIdx=null"
+                                                        class="px-2.5 py-1.5 rounded-lg text-xs font-bold flex-shrink-0 border border-border text-text-muted">✕</button>
+                                                </div>
+                                            </div>
+                                        </template>
+
+                                        <p x-show="(group.options||[]).length===0"
+                                            class="text-[10px] text-text-muted text-center py-2">
+                                            Nenhuma opção ainda.</p>
+
+                                        <div class="flex gap-2 mt-2">
+                                            <input type="text" x-model="newOptName" placeholder="Nova opção…"
+                                                class="form-input flex-1 text-xs py-1.5"
+                                                @keyup.enter="if(newOptName.trim()){addComplementOption(gIdx,newOptName,newOptPrice);newOptName='';newOptPrice=0;}">
+                                            <input type="number" x-model.number="newOptPrice" placeholder="R$"
+                                                step="0.50" min="0" class="form-input w-20 text-xs py-1.5"
+                                                @keyup.enter="if(newOptName.trim()){addComplementOption(gIdx,newOptName,newOptPrice);newOptName='';newOptPrice=0;}">
+                                            <button
+                                                @click="if(newOptName.trim()){addComplementOption(gIdx,newOptName,newOptPrice);newOptName='';newOptPrice=0;}"
+                                                class="px-3 py-1.5 rounded-lg text-white text-xs font-bold flex-shrink-0"
+                                                :style="'background:var(--accent)'">+</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+
+                        <!-- Novo grupo -->
+                        <div class="bg-surface-muted rounded-xl p-3 space-y-2.5">
+                            <p class="text-xs font-bold text-text-muted uppercase tracking-wider">Novo Grupo de
+                                Complemento</p>
+                            <input type="text" x-model="newGroup.name" placeholder="Nome do grupo (ex: Ponto da Carne)"
+                                class="form-input w-full text-sm">
+                            <div class="grid grid-cols-2 gap-2">
+                                <select x-model="newGroup.type" class="form-input text-sm">
+                                    <option value="single">◉ Escolha única (radio)</option>
+                                    <option value="multiple">☑ Múltipla escolha</option>
+                                </select>
+                                <input type="number" x-model.number="newGroup.max" placeholder="Máx. seleções" min="1"
+                                    class="form-input text-sm">
+                            </div>
+                            <label class="flex items-center gap-2 text-sm text-text-primary cursor-pointer">
+                                <input type="checkbox" x-model="newGroup.required" class="rounded"> Obrigatório
+                            </label>
+                            <button @click="addComplementGroup()"
+                                class="w-full py-2 rounded-xl text-white font-bold text-sm"
+                                :style="'background:var(--accent)'">+ Adicionar Grupo</button>
+                        </div>
+                    </div>
+
+                    <button @click="saveProduct()" class="btn-primary w-full mt-2"
+                        x-text="editingProduct.id ? '💾 Salvar Alterações' : '+ Adicionar Produto'"></button>
+                </div>
+            </div>
+        </template>
+    </div>
+</div>
+
+
+<!-- ── MODAL: TUTORIAL ── -->
+<div x-show="showTutorial" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0"
+    x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-200"
+    x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+    class="fixed inset-0 z-[70] flex items-center justify-center px-3 py-4">
+
+    <div class="absolute inset-0 bg-black/75 backdrop-blur-sm" @click="showTutorial=false"></div>
+
+    <div class="relative w-full flex rounded-3xl shadow-2xl overflow-hidden"
+        style="max-width:780px;max-height:92dvh;background:var(--surface-card);border:1px solid var(--border)"
+        x-transition:enter="transition ease-out duration-300"
+        x-transition:enter-start="scale-95 opacity-0 translate-y-4"
+        x-transition:enter-end="scale-100 opacity-100 translate-y-0">
+
+        <!-- Sidebar -->
+        <div class="w-48 flex-shrink-0 flex flex-col border-r border-border overflow-y-auto"
+            style="background:var(--surface);max-height:92dvh">
+            <div class="px-4 pt-4 pb-3 border-b border-border flex-shrink-0">
+                <div class="flex items-center gap-2">
+                    <div class="w-7 h-7 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
+                        :style="'background:var(--accent)'">?</div>
+                    <div>
+                        <p class="text-xs font-display font-bold text-text-primary leading-tight">Tutorial</p>
+                        <p class="text-[10px] text-text-muted">Guia completo</p>
+                    </div>
+                </div>
+            </div>
+            <div class="flex-1 py-2 px-2 space-y-0.5 overflow-y-auto">
+                <template x-for="(step, i) in tutorialSteps" :key="i">
+                    <button @click="tutorialStep = i"
+                        class="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-xl transition-all duration-150 group"
+                        :class="tutorialStep === i ? 'text-white font-semibold shadow-sm' : 'text-text-muted hover:text-text-primary hover:bg-surface-muted'"
+                        :style="tutorialStep === i ? 'background:var(--accent)' : ''">
+                        <div class="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 transition-all"
+                            :class="i < tutorialStep ? 'bg-green-500 text-white' : tutorialStep === i ? 'bg-white/25 text-white' : 'bg-surface-muted text-text-muted group-hover:bg-border'"
+                            x-text="i < tutorialStep ? '✓' : (i + 1)"></div>
+                        <span class="text-[11px] leading-tight truncate flex-1" x-text="step.title"></span>
+                    </button>
+                </template>
+            </div>
+            <div class="px-3 py-3 border-t border-border flex-shrink-0">
+                <div class="flex justify-between text-[10px] text-text-muted mb-1.5">
+                    <span>Progresso</span>
+                    <span class="font-mono font-bold" style="color:var(--accent)"
+                        x-text="Math.round((tutorialStep / (tutorialSteps.length - 1)) * 100) + '%'"></span>
+                </div>
+                <div class="h-1.5 bg-surface-muted rounded-full overflow-hidden">
+                    <div class="h-full rounded-full transition-all duration-500"
+                        :style="'background:var(--accent);width:' + Math.round((tutorialStep / (tutorialSteps.length - 1)) * 100) + '%'">
+                    </div>
+                </div>
+                <p class="text-[9px] text-text-muted mt-1.5 text-center"><span x-text="tutorialStep + 1"></span> de
+                    <span x-text="tutorialSteps.length"></span> passos
+                </p>
+            </div>
+        </div>
+
+        <!-- Conteúdo principal -->
+        <div class="flex-1 flex flex-col min-w-0" style="max-height:92dvh">
+            <div class="flex items-center justify-between px-5 py-3 border-b border-border flex-shrink-0">
+                <div class="flex items-center gap-2 min-w-0">
+                    <template x-if="tutorialSteps[tutorialStep]">
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                                style="background:var(--accent-light);color:var(--accent)"
+                                x-text="tutorialSteps[tutorialStep].groupIcon + ' ' + tutorialSteps[tutorialStep].groupLabel"></span>
+                            <span class="text-[10px] text-text-muted truncate hidden sm:inline"
+                                x-text="tutorialSteps[tutorialStep].title"></span>
+                        </div>
+                    </template>
+                </div>
+                <button @click="showTutorial=false"
+                    class="w-7 h-7 rounded-xl flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-muted transition-all flex-shrink-0">
+                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                            d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto">
+                <template x-if="tutorialSteps[tutorialStep]">
+                    <div class="p-5">
+                        <div class="rounded-2xl p-5 mb-5 relative overflow-hidden flex items-start gap-4"
+                            style="background:linear-gradient(135deg,var(--accent-light) 0%,transparent 70%)">
+                            <div class="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl flex-shrink-0 shadow-sm border border-white/20"
+                                style="background:var(--surface-card)">
+                                <span x-text="tutorialSteps[tutorialStep].icon"></span>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <h3 class="font-display font-bold text-text-primary text-lg leading-tight mb-1"
+                                    x-text="tutorialSteps[tutorialStep].title"></h3>
+                                <p class="text-xs text-text-muted font-mono"
+                                    x-text="'Passo ' + (tutorialStep + 1) + ' / ' + tutorialSteps.length"></p>
+                            </div>
+                            <div class="absolute -right-4 -top-4 w-20 h-20 rounded-full opacity-10"
+                                style="background:var(--accent)"></div>
+                        </div>
+
+                        <p class="text-sm text-text-secondary leading-relaxed mb-4"
+                            x-text="tutorialSteps[tutorialStep].content">
+                        </p>
+
+                        <!-- Visuais do tutorial (mantidos do original) -->
+                        <div class="rounded-2xl border border-border overflow-hidden mb-4"
+                            style="background:var(--surface)">
+                            <template x-if="tutorialSteps[tutorialStep].visual === 'welcome'">
+                                <div class="p-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                    <template
+                                        x-for="feat in [{icon:'🛍️',label:'Cardápio digital com fotos'},{icon:'💬',label:'Pedidos via WhatsApp'},{icon:'📊',label:'Relatórios contábeis'},{icon:'🔥',label:'Promoções automáticas'}]"
+                                        :key="feat.label">
+                                        <div class="flex flex-col items-center gap-2 p-3 rounded-xl border border-border text-center"
+                                            style="background:var(--surface-card)">
+                                            <span class="text-2xl" x-text="feat.icon"></span>
+                                            <span class="text-[10px] text-text-muted leading-tight"
+                                                x-text="feat.label"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                            <template
+                                x-if="['store','open','security','categories','complements','options','discount_pct','free_delivery','coupon','queue','kanban','status','reports','export','closing','customer_order','tracking','notify','edit_order','products'].includes(tutorialSteps[tutorialStep].visual)">
+                                <div class="p-4 flex items-center justify-center py-8 text-center">
+                                    <div>
+                                        <div class="text-4xl mb-2" x-text="tutorialSteps[tutorialStep].icon"></div>
+                                        <p class="text-xs text-text-muted"
+                                            x-text="tutorialSteps[tutorialStep].groupLabel"></p>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+
+                        <div class="rounded-2xl p-3.5 flex items-start gap-3 border"
+                            style="background:var(--accent-light);border-color:rgba(var(--accent-rgb),.2)">
+                            <span class="text-base flex-shrink-0">💡</span>
+                            <p class="text-xs leading-relaxed" style="color:var(--accent)"
+                                x-text="tutorialSteps[tutorialStep].tip">
+                            </p>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- Navegação -->
+            <div class="flex items-center gap-2 px-5 py-3 border-t border-border flex-shrink-0"
+                style="background:var(--surface)">
+                <button @click="if(tutorialStep > 0) tutorialStep--" :disabled="tutorialStep === 0"
+                    class="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-xs font-semibold text-text-muted transition-all disabled:opacity-30 disabled:cursor-not-allowed hover:text-text-primary hover:border-accent/30"
+                    style="background:var(--surface-card)">
+                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Anterior
+                </button>
+                <div class="flex-1 flex items-center justify-center gap-1 overflow-hidden">
+                    <template x-for="(s, i) in tutorialSteps" :key="i">
+                        <button @click="tutorialStep = i" class="rounded-full transition-all duration-300 flex-shrink-0"
+                            :class="i === tutorialStep ? 'w-4 h-2' : 'w-1.5 h-1.5'"
+                            :style="i === tutorialStep ? 'background:var(--accent)' : i < tutorialStep ? 'background:#22c55e' : 'background:var(--border)'"></button>
+                    </template>
+                </div>
+                <button @click="if(tutorialStep < tutorialSteps.length - 1) tutorialStep++; else showTutorial=false"
+                    class="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all active:scale-95"
+                    :style="'background:var(--accent)'">
+                    <span x-show="tutorialStep < tutorialSteps.length - 1">Próximo</span>
+                    <span x-show="tutorialStep === tutorialSteps.length - 1">🎉 Concluir</span>
+                    <svg x-show="tutorialStep < tutorialSteps.length - 1" class="w-3 h-3" fill="none"
+                        viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ── MODAL: CONFIRMAR LIMPEZA DE HISTÓRICO ── -->
+<div x-show="showClearHistoryConfirm" x-transition:enter="transition ease-out duration-200"
+    x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+    x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100"
+    x-transition:leave-end="opacity-0" class="fixed inset-0 z-[90] flex items-center justify-center px-4"
+    style="display:none">
+
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        @click="showClearHistoryConfirm=false; clearHistoryPassword=''; clearHistoryPasswordError=''"></div>
+
+    <div class="relative w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden"
+        style="background:var(--surface-card);border:1px solid var(--border)"
+        x-transition:enter="transition ease-out duration-200" x-transition:enter-start="scale-95 opacity-0"
+        x-transition:enter-end="scale-100 opacity-100" @click.stop>
+
+        <div class="flex items-center gap-3 px-5 py-4 border-b border-border" style="background:rgba(239,68,68,0.06)">
+            <div class="w-10 h-10 rounded-2xl flex items-center justify-center text-xl flex-shrink-0"
+                style="background:rgba(239,68,68,0.12)">🗑️</div>
+            <div>
+                <p class="text-sm font-bold text-red-500">Limpar Histórico</p>
+                <p class="text-xs text-text-muted">Esta ação não pode ser desfeita</p>
+            </div>
+        </div>
+
+        <div class="p-5 space-y-4">
+            <p class="text-sm text-text-secondary leading-relaxed">Todos os pedidos registrados serão <strong
+                    class="text-red-500">permanentemente apagados</strong>. Confirme com a senha do admin para
+                continuar.</p>
+            <div>
+                <label class="block text-xs font-semibold text-text-muted mb-1.5">Senha do Admin</label>
+                <input type="password" x-model="clearHistoryPassword" @keydown.enter="confirmClearHistory()"
+                    placeholder="Digite sua senha..."
+                    class="w-full px-3.5 py-2.5 rounded-xl border text-sm outline-none transition-all"
+                    :class="clearHistoryPasswordError ? 'border-red-400 ring-1 ring-red-400/40' : 'border-border focus:border-accent'"
+                    style="background:var(--surface);color:var(--text-primary)">
+                <p x-show="clearHistoryPasswordError" x-text="clearHistoryPasswordError"
+                    class="text-xs text-red-500 mt-1.5">
+                </p>
+            </div>
+            <div class="flex gap-2 pt-1">
+                <button @click="showClearHistoryConfirm=false; clearHistoryPassword=''; clearHistoryPasswordError=''"
+                    class="flex-1 py-2.5 rounded-xl border border-border text-sm font-semibold text-text-muted transition-all hover:border-accent/40 hover:text-text-primary"
+                    style="background:var(--surface)">Cancelar</button>
+                <button @click="confirmClearHistory()"
+                    class="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all active:scale-95"
+                    style="background:#ef4444">🗑️ Confirmar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ── MODAL: LOGIN DO CLIENTE ── -->
+<div x-show="showClientLogin && !isCloudAuthenticated" x-transition:enter="transition ease-out duration-200"
+    x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+    class="fixed inset-0 z-[100] flex items-center justify-center px-4" style="display:none">
+
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        @click="showClientLogin = false; cloudLoginStep='email'; cloudLoginError=''"></div>
+
+    <div class="relative bg-surface-card rounded-3xl shadow-2xl p-6 w-full max-w-sm"
+        x-transition:enter="transition ease-out duration-200" x-transition:enter-start="scale-95 opacity-0"
+        x-transition:enter-end="scale-100 opacity-100">
+
+        <!-- Etapa: email -->
+        <div x-show="cloudLoginStep === 'email'">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-2xl flex items-center justify-center text-xl"
+                    style="background:rgba(var(--accent-rgb),.12)">👤</div>
+                <div>
+                    <h3 class="font-display font-bold text-text-primary text-lg leading-tight">Identificar-se</h3>
+                    <p class="text-xs text-text-muted">Para finalizar seu pedido</p>
+                </div>
+            </div>
+            <p class="text-sm text-text-muted mb-4">Digite seu e-mail para receber um link de acesso e acompanhar seu
+                pedido
+                em tempo real.</p>
+            <input type="email" x-model="cloudLoginEmail" placeholder="seu@email.com" @keyup.enter="cloudSendOtp()"
+                class="form-input w-full mb-3" :disabled="cloudSyncing">
+            <p x-show="cloudLoginError" class="text-red-500 text-xs mb-3" x-text="cloudLoginError"></p>
+            <button @click="cloudSendOtp()" :disabled="cloudSyncing"
+                class="w-full py-3 rounded-2xl font-bold text-white transition-all disabled:opacity-50"
+                :style="'background:var(--accent)'">
+                <span x-show="!cloudSyncing">Enviar link</span>
+                <span x-show="cloudSyncing" style="display:none">Enviando...</span>
+            </button>
+            <p class="text-[11px] text-text-muted text-center mt-3 leading-relaxed">Seus dados ficam protegidos e são
+                usados
+                apenas para rastrear seu pedido.</p>
+        </div>
+
+        <!-- Etapa: link enviado -->
+        <div x-show="cloudLoginStep === 'otp'" style="display:none">
+            <div class="flex items-center gap-3 mb-5">
+                <div class="w-10 h-10 rounded-2xl flex items-center justify-center text-xl"
+                    style="background:rgba(34,197,94,.12)">📧</div>
+                <div>
+                    <h3 class="font-display font-bold text-text-primary text-lg leading-tight">Link enviado!</h3>
+                    <p class="text-xs font-bold" style="color:var(--accent)" x-text="cloudLoginEmail"></p>
+                </div>
+            </div>
+            <div class="rounded-2xl p-4 mb-4 text-center space-y-2"
+                style="background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2)">
+                <p class="text-sm font-bold text-text-primary">Verifique sua caixa de entrada</p>
+                <p class="text-xs text-text-muted leading-relaxed">Clique no link que enviamos para <strong
+                        x-text="cloudLoginEmail"></strong> para entrar automaticamente.</p>
+                <p class="text-[11px] text-text-muted">⏱ O link expira em 1 hora. Verifique também o spam.</p>
+            </div>
+            <p x-show="cloudLoginError" class="text-red-500 text-xs mb-3" x-text="cloudLoginError"></p>
+            <button @click="cloudLoginStep='email'; cloudLoginError=''; cloudOtpSent=false"
+                class="w-full py-2.5 text-sm font-semibold text-text-muted hover:text-text-primary rounded-xl border border-border transition-all hover:border-accent/30"
+                style="background:var(--surface)">
+                ← Usar outro e-mail
+            </button>
+        </div>
+    </div>
+</div>
+
+
+<!-- ── MODAL: PERFIL DO USUÁRIO ── -->
+<div x-show="showUserProfile && isCloudAuthenticated" x-transition:enter="transition ease-out duration-300"
+    x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+    x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100"
+    x-transition:leave-end="opacity-0" class="fixed inset-0 z-[90] flex items-end sm:items-center justify-center"
+    style="display:none">
+
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="showUserProfile = false"></div>
+
+    <div x-show="showUserProfile" x-transition:enter="transition ease-out duration-300"
+        x-transition:enter-start="translate-y-full sm:translate-y-0 sm:scale-95 opacity-0"
+        x-transition:enter-end="translate-y-0 sm:scale-100 opacity-100"
+        x-transition:leave="transition ease-in duration-200" x-transition:leave-start="translate-y-0 opacity-100"
+        x-transition:leave-end="translate-y-full opacity-0"
+        class="relative bg-surface-card w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col"
+        style="max-height:88vh">
+
+        <!-- Hero do perfil -->
+        <div class="relative px-6 pt-6 pb-4 flex-shrink-0"
+            style="background:linear-gradient(135deg,rgba(var(--accent-rgb),.08) 0%,transparent 100%)">
+            <button @click="showUserProfile = false"
+                class="absolute top-4 right-4 w-8 h-8 rounded-xl flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-muted transition-all">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+            <div class="flex items-center gap-4">
+                <div class="w-16 h-16 rounded-2xl flex items-center justify-center text-white font-display font-black text-2xl flex-shrink-0 shadow-lg"
+                    :style="`background:${userRoleLabel?.color ?? 'var(--accent)'}`" x-text="userAvatarInitial"></div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap mb-0.5">
+                        <h3 class="font-display font-bold text-text-primary text-lg leading-tight truncate"
+                            x-text="userProfile.displayName || 'Minha Conta'"></h3>
+                        <span x-show="userRoleLabel"
+                            class="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
+                            :style="`color:${userRoleLabel?.color};background:${userRoleLabel?.bg}`"
+                            x-text="userRoleLabel?.text"></span>
+                    </div>
+                    <p class="text-xs text-text-muted truncate" x-text="cloudUser?.email"></p>
+                </div>
+            </div>
+            <div class="flex gap-1 mt-4 p-1 rounded-xl" style="background:var(--surface-muted)">
+                <template
+                    x-for="tab in [{id:'profile',icon:'👤',label:'Perfil'},{id:'orders',icon:'📦',label:'Pedidos'},{id:'account',icon:'⚙️',label:'Conta'}]"
+                    :key="tab.id">
+                    <button @click="userProfileTab = tab.id"
+                        class="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all"
+                        :style="userProfileTab === tab.id ? 'background:var(--surface-card);color:var(--text-primary);box-shadow:var(--shadow-xs)' : 'color:var(--text-muted)'">
+                        <span x-text="tab.icon" class="text-sm leading-none"></span>
+                        <span x-text="tab.label"></span>
+                    </button>
+                </template>
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto">
+
+            <!-- Tab: Perfil -->
+            <div x-show="userProfileTab === 'profile'" class="p-5 space-y-4">
+                <div>
+                    <label class="form-label">Nome de exibição</label>
+                    <input type="text" x-model="userProfile.displayName" placeholder="Como você quer ser chamado?"
+                        class="form-input w-full">
+                </div>
+                <div>
+                    <label class="form-label">Telefone / WhatsApp <span
+                            class="text-[10px] font-normal text-text-muted normal-case tracking-normal ml-1">com DDD,
+                            somente
+                            números</span></label>
+                    <input type="tel" x-model="userProfile.phone"
+                        @input="userProfile.phone = $event.target.value.replace(/\D/g,'')" placeholder="(82) 99999-9999"
+                        class="form-input w-full">
+                </div>
+                <div class="rounded-xl p-3 flex items-center gap-3" style="background:var(--surface-muted)">
+                    <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-sm"
+                        style="background:var(--surface-card)">✉️</div>
+                    <div class="min-w-0">
+                        <p class="text-[10px] text-text-muted">E-mail (via Firebase Auth)</p>
+                        <p class="text-xs font-bold text-text-primary truncate" x-text="cloudUser?.email"></p>
+                    </div>
+                </div>
+                <button @click="saveUserProfile()"
+                    class="w-full py-3 rounded-2xl font-bold text-white transition-all active:scale-[0.98]"
+                    :style="'background:var(--accent)'">💾 Salvar Perfil</button>
+            </div>
+
+            <!-- Tab: Pedidos -->
+            <div x-show="userProfileTab === 'orders'" class="p-5 space-y-3">
+                <div x-show="myOrders.length === 0" class="flex flex-col items-center justify-center py-12 text-center">
+                    <div class="text-4xl mb-3">📭</div>
+                    <p class="text-sm font-bold text-text-primary mb-1">Nenhum pedido ainda</p>
+                    <p class="text-xs text-text-muted">Seus pedidos aparecerão aqui após a confirmação.</p>
+                </div>
+                <template x-for="order in myOrders" :key="order.uuid">
+                    <div class="rounded-2xl border border-border overflow-hidden"
+                        style="background:var(--surface-card)">
+                        <div class="flex items-center gap-3 px-4 py-3 border-b border-border/60"
+                            style="background:var(--surface-muted)">
+                            <div class="w-2 h-2 rounded-full flex-shrink-0"
+                                :style="`background:${(omStatusById(order.currentStatus ?? 'paid') ?? {color:'#94a3b8'}).color}`">
+                            </div>
+                            <span class="text-xs font-bold font-mono text-text-primary flex-1"
+                                x-text="'#' + order.orderNumber"></span>
+                            <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full text-white"
+                                :style="`background:${(omStatusById(order.currentStatus ?? 'paid') ?? {color:'#94a3b8'}).color}`"
+                                x-text="(omStatusById(order.currentStatus ?? 'paid') ?? {short:'—'}).short"></span>
+                        </div>
+                        <div class="px-4 py-3 flex items-center gap-3">
+                            <div class="flex-1 min-w-0">
+                                <p class="text-xs text-text-muted truncate"
+                                    x-text="(order.items ?? []).map(i => i.qty + 'x ' + i.name).join(' · ')"></p>
+                                <p class="text-[10px] text-text-muted font-mono mt-0.5"
+                                    x-text="(order.date ?? '') + ' ' + (order.time ?? '')"></p>
+                            </div>
+                            <div class="text-right flex-shrink-0">
+                                <p class="text-sm font-bold" style="color:var(--accent)"
+                                    x-text="formatMoney(order.total)"></p>
+                                <p class="text-[10px] text-text-muted"
+                                    x-text="order.deliveryType === 'pickup' ? '🏃 Retirada' : '🛵 Entrega'"></p>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- Tab: Conta -->
+            <div x-show="userProfileTab === 'account'" class="p-5 space-y-4">
+                <div class="rounded-2xl border border-border overflow-hidden">
+                    <div class="px-4 py-2.5 border-b border-border" style="background:var(--surface-muted)">
+                        <p class="text-xs font-bold text-text-muted uppercase tracking-wider">Sessão ativa</p>
+                    </div>
+                    <div class="p-4 space-y-3">
+                        <div class="flex items-center justify-between text-xs">
+                            <span class="text-text-muted">ID do usuário</span>
+                            <span class="font-mono text-text-primary text-[10px]"
+                                x-text="cloudUser?.userId?.slice(0,16) + '…'"></span>
+                        </div>
+                        <div class="flex items-center justify-between text-xs">
+                            <span class="text-text-muted">Permissão</span>
+                            <span class="font-bold px-2 py-0.5 rounded-full text-[11px]"
+                                :style="`color:${userRoleLabel?.color};background:${userRoleLabel?.bg}`"
+                                x-text="userRoleLabel?.text ?? '—'"></span>
+                        </div>
+                    </div>
+                </div>
+                <button x-show="isCloudAdmin || isCloudWorker" @click="showUserProfile = false; showAdminPanel = true"
+                    class="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border border-border text-left transition-all hover:border-accent/30 active:scale-[0.99]"
+                    style="background:var(--surface-muted)">
+                    <div class="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
+                        style="background:var(--surface-card)">⚙️</div>
+                    <div>
+                        <p class="text-sm font-bold text-text-primary">Abrir Painel Admin</p>
+                        <p class="text-[11px] text-text-muted">Gerenciar cardápio, pedidos e relatórios</p>
+                    </div>
+                    <svg class="w-4 h-4 text-text-muted ml-auto flex-shrink-0" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                </button>
+                <button @click="cloudLogout(); showUserProfile = false"
+                    class="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-red-400/30 text-red-400 text-sm font-bold transition-all hover:bg-red-400/5 active:scale-[0.98]">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                    Sair da conta
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+
+
+<!-- ══════════════════════════════════════════
+         MODAL: CONFIRMAR LIMPEZA DE LOGS
+         ↳ Fora do max-w-4xl para não herdar
+           o contexto de scroll/visibilidade das abas.
+         ↳ Filho direto do painel admin (fixed inset-0).
+    ══════════════════════════════════════════ -->
+<div x-show="logClearConfirm" x-transition:enter="transition ease-out duration-150" x-transition:enter-start="opacity-0"
+    x-transition:enter-end="opacity-100" class="fixed inset-0 z-[90] flex items-center justify-center px-4"
+    style="display:none">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="logClearConfirm = false"></div>
+    <div class="relative w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden"
+        style="background:var(--surface-card);border:1px solid var(--border)"
+        x-transition:enter="transition ease-out duration-200" x-transition:enter-start="scale-95 opacity-0"
+        x-transition:enter-end="scale-100 opacity-100" @click.stop>
+        <div class="flex items-center gap-3 px-5 py-4 border-b border-border" style="background:rgba(239,68,68,0.06)">
+            <div class="w-10 h-10 rounded-2xl flex items-center justify-center text-xl"
+                style="background:rgba(239,68,68,0.12)">🗑️</div>
+            <div>
+                <p class="text-sm font-bold text-red-500">Limpar Sys Logs</p>
+                <p class="text-xs text-text-muted">Esta ação não pode ser desfeita</p>
+            </div>
+        </div>
+        <div class="p-5 space-y-4">
+            <p class="text-sm text-text-secondary leading-relaxed">
+                Todos os <strong x-text="logStats.total"></strong> log(s) serão <strong
+                    class="text-red-500">permanentemente apagados</strong>.
+            </p>
+            <div class="flex gap-2">
+                <button @click="logClearConfirm = false"
+                    class="flex-1 py-2.5 rounded-xl border border-border text-sm font-semibold text-text-muted transition-all"
+                    style="background:var(--surface)">Cancelar</button>
+                <button @click="clearAllLogs()"
+                    class="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all active:scale-95"
+                    style="background:#ef4444">🗑️ Confirmar</button>
+            </div>
+        </div>
+    </div>
+</div><!-- /modal logClearConfirm -->

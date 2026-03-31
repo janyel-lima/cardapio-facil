@@ -10,19 +10,19 @@ const appState = {
   showPixModal: false, showTutorial: false, tutorialStep: 0, dbReady: false,
 
   selectedPromoFilter: null,
-  viewMode:            'grid',
-  loginEmail:          '',
-  showClientLogin:     false,
+  viewMode: 'grid',
+  loginEmail: '',
+  showClientLogin: false,
 
   // ── Perfil / Login ─────────────────────────────────────────────────────────
-  showUserProfile:     false,
-  userProfileTab:      'profile',
+  showUserProfile: false,
+  userProfileTab: 'profile',
   loginNudgeDismissed: false,
-  showLoginNudge:      false,
+  showLoginNudge: false,
 
   userProfile: {
     displayName: '',
-    phone:       '',
+    phone: '',
   },
 
   // ── PIX ────────────────────────────────────────────────────────────────────
@@ -32,44 +32,45 @@ const appState = {
   selectedProduct: null, modalQty: 1, modalNote: '', modalSelectedComplements: {},
 
   // ── Carrinho ───────────────────────────────────────────────────────────────
-  cart:          [],
-  checkout:      { name: '', phone: '', address: '', complement: '', deliveryType: 'delivery', payment: 'pix' },
-  couponInput:   '',
+  cart: [],
+  checkout: { name: '', phone: '', address: '', complement: '', deliveryType: 'delivery', payment: 'pix' },
+  couponInput: '',
   appliedCoupon: null,
 
   // ── Roteamento de entrega ──────────────────────────────────────────────────
-  deliveryRouteKm:      null,
-  deliveryRouteFailed:  false,
+  deliveryRouteKm: null,
+  deliveryRouteFailed: false,
   deliveryRouteLoading: false,
 
   // ── Admin ──────────────────────────────────────────────────────────────────
-  isAdmin:  false,
+  isAdmin: false,
   adminTab: 'store',
+  adminViewingMenu: false,
 
   get adminTabs() {
     const all = [
-      { id: 'store',         icon: '🏪', name: 'Loja'       },
-      { id: 'delivery',      icon: '🛵', name: 'Entrega'    },
-      { id: 'categories',    icon: '🏷️', name: 'Categorias' },
-      { id: 'products',      icon: '🛍️', name: 'Produtos'   },
-      { id: 'promos',        icon: '🔥', name: 'Promoções'  },
-      { id: 'order-manager', icon: '⚙️', name: 'Pedidos'    },
-      { id: 'orders',        icon: '📋', name: 'Histórico'  },
-      { id: 'reports',       icon: '📊', name: 'Relatórios' },
-      { id: 'syslogs',       icon: '🪲', name: 'Logs'       },
+      { id: 'store', icon: '🏪', name: 'Loja' },
+      { id: 'delivery', icon: '🛵', name: 'Entrega' },
+      { id: 'categories', icon: '🏷️', name: 'Categorias' },
+      { id: 'products', icon: '🛍️', name: 'Produtos' },
+      { id: 'promos', icon: '🔥', name: 'Promoções' },
+      { id: 'order-manager', icon: '⚙️', name: 'Pedidos' },
+      { id: 'orders', icon: '📋', name: 'Histórico' },
+      { id: 'reports', icon: '📊', name: 'Relatórios' },
+      { id: 'syslogs', icon: '🪲', name: 'Logs' },
     ];
 
-    if (this.isCloudAdmin)  return all;
+    if (this.isCloudAdmin) return all;
     if (this.isCloudWorker) return all.filter(t => ['order-manager', 'orders'].includes(t.id));
     return [];
   },
 
   // ── Formulários de edição ──────────────────────────────────────────────────
   editingProduct: {},
-  newGroup:       { name: '', type: 'multiple', required: false, min: 0, max: 3, options: [] },
+  newGroup: { name: '', type: 'multiple', required: false, min: 0, max: 3, options: [] },
   newGroupOption: { name: '', price: 0 },
-  newCategory:    { name: '', icon: '' },
-  newPromo:       { name: '', type: 'percentage', value: 0, code: '', minOrder: 0, expiresAt: '' },
+  newCategory: { name: '', icon: '' },
+  newPromo: { name: '', type: 'percentage', value: 0, code: '', minOrder: 0, expiresAt: '' },
 
   // Zona de entrega — inclui deliveryTime por zona (opcional)
   // Estrutura persistida: { id, label, maxKm, fee, deliveryTime? }
@@ -78,14 +79,14 @@ const appState = {
   // ── Dados reativos ─────────────────────────────────────────────────────────
   orderHistory: [],
   orderCounter: 0,
-  auditLog:     [],
+  auditLog: [],
 
   // ── Sys Logs ───────────────────────────────────────────────────────────────
-  errorLogs:         [],
-  logFilter:         'all',
-  logSearch:         '',
-  logDetailId:       null,
-  logClearConfirm:   false,
+  errorLogs: [],
+  logFilter: 'all',
+  logSearch: '',
+  logDetailId: null,
+  logClearConfirm: false,
   _logSessionErrors: 0,
 
   // ── Toast ──────────────────────────────────────────────────────────────────
@@ -96,39 +97,39 @@ const appState = {
   currentTheme: { id: 'red', name: 'Vermelho', accent: '#ef4444' },
   customAccent: '#ef4444',
   themes: [
-    { id: 'red',    name: 'Vermelho', accent: '#ef4444', hover: '#dc2626', rgb: '239,68,68'   },
-    { id: 'orange', name: 'Laranja',  accent: '#f97316', hover: '#ea580c', rgb: '249,115,22'  },
-    { id: 'amber',  name: 'Âmbar',   accent: '#f59e0b', hover: '#d97706', rgb: '245,158,11'  },
-    { id: 'green',  name: 'Verde',    accent: '#22c55e', hover: '#16a34a', rgb: '34,197,94'   },
-    { id: 'teal',   name: 'Teal',     accent: '#14b8a6', hover: '#0d9488', rgb: '20,184,166'  },
-    { id: 'blue',   name: 'Azul',     accent: '#3b82f6', hover: '#2563eb', rgb: '59,130,246'  },
-    { id: 'violet', name: 'Violeta',  accent: '#8b5cf6', hover: '#7c3aed', rgb: '139,92,246'  },
-    { id: 'pink',   name: 'Rosa',     accent: '#ec4899', hover: '#db2777', rgb: '236,72,153'  },
+    { id: 'red', name: 'Vermelho', accent: '#ef4444', hover: '#dc2626', rgb: '239,68,68' },
+    { id: 'orange', name: 'Laranja', accent: '#f97316', hover: '#ea580c', rgb: '249,115,22' },
+    { id: 'amber', name: 'Âmbar', accent: '#f59e0b', hover: '#d97706', rgb: '245,158,11' },
+    { id: 'green', name: 'Verde', accent: '#22c55e', hover: '#16a34a', rgb: '34,197,94' },
+    { id: 'teal', name: 'Teal', accent: '#14b8a6', hover: '#0d9488', rgb: '20,184,166' },
+    { id: 'blue', name: 'Azul', accent: '#3b82f6', hover: '#2563eb', rgb: '59,130,246' },
+    { id: 'violet', name: 'Violeta', accent: '#8b5cf6', hover: '#7c3aed', rgb: '139,92,246' },
+    { id: 'pink', name: 'Rosa', accent: '#ec4899', hover: '#db2777', rgb: '236,72,153' },
   ],
 
   paymentMethods: [
-    { id: 'pix',  name: 'PIX',      icon: '🔑' },
-    { id: 'card', name: 'Cartão',   icon: '💳' },
+    { id: 'pix', name: 'PIX', icon: '🔑' },
+    { id: 'card', name: 'Cartão', icon: '💳' },
     { id: 'cash', name: 'Dinheiro', icon: '💵' },
   ],
 
   // ── Config da loja ─────────────────────────────────────────────────────────
   config: {
-    restaurantName:   '',
-    city:             '',
-    whatsapp:         '',
-    pixKey:           '',
+    restaurantName: '',
+    city: '',
+    whatsapp: '',
+    pixKey: '',
 
     // Taxa flat — fallback quando não há zonas ou quando coords indisponíveis
-    deliveryFee:      0,
-    minOrder:         0,
+    deliveryFee: 0,
+    minOrder: 0,
 
     // Tempo padrão: usado para retirada no balcão ou quando sem zonas
     // Cada zona pode ter seu próprio campo deliveryTime (string, opcional)
-    deliveryTime:     '',
+    deliveryTime: '',
 
-    isOpen:           false,
-    adminPass:        'admin123',
+    isOpen: false,
+    adminPass: 'admin123',
 
     // ── Zonas de entrega ──────────────────────────────────────────────────
     // Estrutura: { id, label, maxKm, fee, deliveryTime? }
@@ -140,25 +141,25 @@ const appState = {
     // Se exceder última zona:
     //   deliveryFeeOutOfRange === null   → bloqueia (fora de área)
     //   deliveryFeeOutOfRange === number → cobra essa taxa
-    deliveryZones:          [],
-    deliveryFeeOutOfRange:  null,
+    deliveryZones: [],
+    deliveryFeeOutOfRange: null,
 
     // ── Endereço estruturado da loja ──────────────────────────────────────
-    storeRua:         '',
-    storeNumero:      '',
+    storeRua: '',
+    storeNumero: '',
     storeComplemento: '',
-    storeBairro:      '',
-    storeCidade:      '',
-    storeUf:          '',
-    storeCep:         '',
-    storeLat:         null,
-    storeLng:         null,
+    storeBairro: '',
+    storeCidade: '',
+    storeUf: '',
+    storeCep: '',
+    storeLat: null,
+    storeLng: null,
   },
 
   // ── Cardápio ───────────────────────────────────────────────────────────────
   categories: [],
-  items:       [],
-  promotions:  [],
+  items: [],
+  promotions: [],
 
   // ── Getters de perfil / auth ───────────────────────────────────────────────
   get myOrders() {
@@ -175,9 +176,9 @@ const appState = {
   },
 
   get userRoleLabel() {
-    if (this.isCloudAdmin)  return { text: 'Admin',     color: '#ef4444', bg: 'rgba(239,68,68,.12)'  };
+    if (this.isCloudAdmin) return { text: 'Admin', color: '#ef4444', bg: 'rgba(239,68,68,.12)' };
     if (this.isCloudWorker) return { text: 'Atendente', color: '#f59e0b', bg: 'rgba(245,158,11,.12)' };
-    if (this.isCloudClient) return { text: 'Cliente',   color: '#3b82f6', bg: 'rgba(59,130,246,.12)' };
+    if (this.isCloudClient) return { text: 'Cliente', color: '#3b82f6', bg: 'rgba(59,130,246,.12)' };
     return null;
   },
 
@@ -358,7 +359,7 @@ const appState = {
   },
 
   prefillCheckoutFromUser() {
-    const u  = this.cloudUser   || this.currentUser  || this.authUser || null;
+    const u = this.cloudUser || this.currentUser || this.authUser || null;
     const fb = (typeof firebase !== 'undefined' && typeof firebase.auth === 'function')
       ? firebase.auth().currentUser : null;
     const prof = this.userProfile || null;
@@ -367,7 +368,7 @@ const appState = {
     if (nameEmpty) {
       const name = u?.name || u?.displayName || fb?.displayName || prof?.name || '';
       if (name.trim()) {
-        this.checkout.name           = name.trim();
+        this.checkout.name = name.trim();
         this.checkout._namePrefilled = true;
       }
     }
@@ -375,9 +376,9 @@ const appState = {
     const phoneEmpty = !this.checkout.phone?.trim();
     if (phoneEmpty) {
       const phone = u?.phone || u?.phoneNumber || u?.whatsapp ||
-                    fb?.phoneNumber || prof?.phone || prof?.phoneNumber || '';
+        fb?.phoneNumber || prof?.phone || prof?.phoneNumber || '';
       if (phone.trim()) {
-        this.checkout.phone           = phone.trim();
+        this.checkout.phone = phone.trim();
         this.checkout._phonePrefilled = true;
       }
     }

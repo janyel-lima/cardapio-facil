@@ -197,6 +197,9 @@ this._loadUserProfile();
           }, 'app');
         }
       });
+      this.$watch('isCloudAuthenticated', (v) => {
+  if (v && (this.isCloudAdmin || this.isCloudWorker)) this.omEnterTab();
+    });
 
       // ── Atalho de teclado: Escape ─────────────────────────────────────────
       document.addEventListener('keydown', e => {
