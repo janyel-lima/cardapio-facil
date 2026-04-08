@@ -25,15 +25,16 @@ function menuApp() {
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appCart));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appLogger));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appAuth));
-   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appStoreMap));
+  Object.defineProperties(component, Object.getOwnPropertyDescriptors(appStoreMap));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appAdmin));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appTracking));
+  Object.defineProperties(component, Object.getOwnPropertyDescriptors(appChat));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appOrderManager));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appProductCard));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appPromoFilter));
   Object.defineProperties(component, Object.getOwnPropertyDescriptors(appAddress));
 
-  
+
   // 2. Método de Inicialização (chamado via x-init="init()")
   component.init = async function () {
     try {
@@ -42,7 +43,7 @@ function menuApp() {
 
       // ── Aplica tema salvo ──────────────────────────────────────────────────
       const savedThemeId = this.loadSetting('theme', 'red');
-      const savedAccent  = this.loadSetting('customAccent', '#ef4444');
+      const savedAccent = this.loadSetting('customAccent', '#ef4444');
       if (savedThemeId === 'custom') {
         this.customAccent = savedAccent;
         this.applyCustomColor(savedAccent);
@@ -56,14 +57,14 @@ function menuApp() {
       this._initCloudAuth();      // registra onAuthStateChanged + verifica Email Link na URL
 
       // Nudge: aparece 3s após carregar, só para não autenticados
-setTimeout(() => {
-  if (!this.isCloudAuthenticated && !this.loginNudgeDismissed) {
-    this.showLoginNudge = true;
-  }
-}, 3000);
+      setTimeout(() => {
+        if (!this.isCloudAuthenticated && !this.loginNudgeDismissed) {
+          this.showLoginNudge = true;
+        }
+      }, 3000);
 
-// Carrega perfil salvo do localStorage
-this._loadUserProfile();
+      // Carrega perfil salvo do localStorage
+      this._loadUserProfile();
       // ── Alpine Watchers ───────────────────────────────────────────────────
       //
       // Usamos JSON diff para detectar mutações profundas (push/splice) sem
@@ -74,8 +75,8 @@ this._loadUserProfile();
       // Reatribuir a referência quebraria o vínculo que persistOrder,
       // updateOrder e o polling do order-manager têm com o array original.
 
-      let _snapCat    = JSON.stringify(this.categories);
-      let _snapItems  = JSON.stringify(this.items);
+      let _snapCat = JSON.stringify(this.categories);
+      let _snapItems = JSON.stringify(this.items);
       let _snapPromos = JSON.stringify(this.promotions);
 
       const _maybeSaveCats = async (val) => {
@@ -112,9 +113,9 @@ this._loadUserProfile();
         }
       };
 
-      this.$watch('categories',  _maybeSaveCats);
-      this.$watch('items',       _maybeSaveItems);
-      this.$watch('promotions',  _maybeSavePromos);
+      this.$watch('categories', _maybeSaveCats);
+      this.$watch('items', _maybeSaveItems);
+      this.$watch('promotions', _maybeSavePromos);
 
       // Autosave de segurança: captura mutações in-place (ex: cat.active = !cat.active)
       // que o watcher de referência pode não detectar em todos os cenários.
@@ -157,7 +158,7 @@ this._loadUserProfile();
           }
         } catch (e) {
           this.logWarn(e.message || String(e), {
-             source: 'watcher:showAdminPanel', type: 'watcherError', stack: e.stack || null,
+            source: 'watcher:showAdminPanel', type: 'watcherError', stack: e.stack || null,
           }, 'app');
         }
       });
@@ -173,11 +174,11 @@ this._loadUserProfile();
           } else {
             this.omLeaveTab();
           }
-           if (tab === 'store') {
-         this.$nextTick(() => this.storeMapOpen());
-       } else {
-         this.storeMapDestroy();
-       }
+          if (tab === 'store') {
+            this.$nextTick(() => this.storeMapOpen());
+          } else {
+            this.storeMapDestroy();
+          }
         } catch (e) {
           this.logWarn(e.message || String(e), {
             source: 'watcher:adminTab', type: 'watcherError', tab, stack: e.stack || null,
@@ -189,7 +190,7 @@ this._loadUserProfile();
         try {
           if (this.searchQuery) {
             this.searchQuery = '';
-            this.showSearch  = false;
+            this.showSearch = false;
           }
         } catch (e) {
           this.logWarn(e.message || String(e), {
@@ -198,17 +199,17 @@ this._loadUserProfile();
         }
       });
       this.$watch('isCloudAuthenticated', (v) => {
-  if (v && (this.isCloudAdmin || this.isCloudWorker)) this.omEnterTab();
-    });
+        if (v && (this.isCloudAdmin || this.isCloudWorker)) this.omEnterTab();
+      });
 
       // ── Atalho de teclado: Escape ─────────────────────────────────────────
       document.addEventListener('keydown', e => {
         if (e.key !== 'Escape') return;
 
         // Fecha modais do cliente
-        this.showCart          = false;
-        this.showProductModal  = false;
-        this.showThemePicker   = false;
+        this.showCart = false;
+        this.showProductModal = false;
+        this.showThemePicker = false;
         this.showOrderTracking = false;
 
         // Se o carrinho estava no passo de endereço, destrói o mapa ao fechar
@@ -229,7 +230,7 @@ this._loadUserProfile();
         if (this.showOrderManager) {
           this.omCloseDetail();   // reseta omSelectedOrder, omDraft, omEditMode
           this.omLeaveTab();      // para o polling
-          this.showOrderManager  = false;
+          this.showOrderManager = false;
           return;
         }
 
@@ -242,8 +243,8 @@ this._loadUserProfile();
       }, 'app');
     }
   };
-  
+
 
   return component;
-  
+
 }
